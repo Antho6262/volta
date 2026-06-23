@@ -190,8 +190,16 @@ async function tabStock(body) {
           <span class="btn btn-sm btn-danger" onclick="suppCategorie('${c.id}')">Supprimer la catégorie</span></div>
         <table><thead><tr><th>Produit</th><th>Prix</th><th>Stock</th><th>Seuil</th><th></th></tr></thead>
           <tbody>${entries(c.produits).length ? entries(c.produits).map(([pid, p]) => `
-            <tr><td>${p.nom}</td><td>${formatMoney(p.prix)}</td><td>${p.stock}</td><td>${p.seuil || 0}</td>
-            <td><span class="btn btn-sm btn-danger" onclick="suppProduit('${c.id}','${pid}')">Suppr.</span></td></tr>
+            <tr>
+              <td><input type="text" value="${p.nom}" id="edNom_${c.id}_${pid}" style="min-width:140px;"></td>
+              <td><input type="number" value="${p.prix || 0}" id="edPrix_${c.id}_${pid}" style="max-width:90px;"></td>
+              <td><input type="number" value="${p.stock || 0}" id="edStock_${c.id}_${pid}" style="max-width:90px;"></td>
+              <td><input type="number" value="${p.seuil || 0}" id="edSeuil_${c.id}_${pid}" style="max-width:90px;"></td>
+              <td style="white-space:nowrap;">
+                <span class="btn btn-sm btn-gold" onclick="modifierProduit('${c.id}','${pid}')">Enregistrer</span>
+                <span class="btn btn-sm btn-danger" onclick="suppProduit('${c.id}','${pid}')">Suppr.</span>
+              </td>
+            </tr>
           `).join("") : '<tr class="empty-row"><td colspan="5">Aucun produit</td></tr>'}</tbody></table>
         <div class="row mt16">
           <input type="text" placeholder="Nom du produit" id="pNom_${c.id}">
@@ -222,6 +230,18 @@ async function ajouterProduit(catId) {
     seuil: Number(document.getElementById("pSeuil_" + catId).value) || 0
   });
   toast("Produit ajouté.");
+  loadTab("stock");
+}
+async function modifierProduit(catId, pid) {
+  const nom = document.getElementById(`edNom_${catId}_${pid}`).value.trim();
+  if (!nom) { toast("Nom requis.", true); return; }
+  await db.ref(`stock/${catId}/produits/${pid}`).update({
+    nom,
+    prix: Number(document.getElementById(`edPrix_${catId}_${pid}`).value) || 0,
+    stock: Number(document.getElementById(`edStock_${catId}_${pid}`).value) || 0,
+    seuil: Number(document.getElementById(`edSeuil_${catId}_${pid}`).value) || 0
+  });
+  toast("Produit mis à jour.");
   loadTab("stock");
 }
 async function suppProduit(catId, pid) { if (confirm("Supprimer ce produit ?")) { await db.ref("stock/" + catId + "/produits/" + pid).remove(); loadTab("stock"); } }
