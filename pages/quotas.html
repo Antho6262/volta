@@ -27,10 +27,10 @@ function renderContent() {
   document.getElementById("content").innerHTML = `
     <h1>Quotas</h1>
     <div class="sigil-rule"></div>
-    <p class="muted small">Quota global = nombre d'actions attendu par membre sur la semaine active.</p>
+    <p class="muted small">Quota global = nombre d'actions attendu par membre sur la semaine active. ${SESSION.role === 'admin' ? 'Modifiable dans Admin → Quotas.' : ''}</p>
     <div class="panel mt16">
-      <table><thead><tr><th>Membre</th><th>Quota / semaine</th><th>Réalisé</th><th>Progression</th>${SESSION && SESSION.role === 'admin' ? '<th></th>' : ''}</tr></thead>
-        <tbody id="tblQuotas"><tr class="empty-row"><td colspan="5">Chargement…</td></tr></tbody></table>
+      <table><thead><tr><th>Membre</th><th>Quota / semaine</th><th>Réalisé</th><th>Progression</th></tr></thead>
+        <tbody id="tblQuotas"><tr class="empty-row"><td colspan="4">Chargement…</td></tr></tbody></table>
     </div>
     <div id="quotasProduitsWrap"></div>
   `;
@@ -49,21 +49,15 @@ async function chargerQuotasProduits(membres, actions) {
   const actionsDispo = snapA.val() || {};
   const stock = snapS.val() || {};
   const quotasProduits = snapQ.val() || {};
-  const isAdmin = SESSION.role === "admin";
 
-  // catégories utilisées comme "produit choisi au moment de l'action" (ex: Drogue)
   const catIds = [...new Set(Object.values(actionsDispo).map(a => a.cat_variable).filter(Boolean))];
-
-  if (!catIds.length) {
-    wrap.innerHTML = '<div class="panel"><p class="muted small">Aucune action avec produit variable (ex: Vente de Drogue) n\'est configurée. Vas dans Admin → Actions.</p></div>';
-    return;
-  }
+  if (!catIds.length) { wrap.innerHTML = ""; return; }
 
   wrap.innerHTML = catIds.map(catId => {
     const cat = stock[catId];
     if (!cat) return "";
     const produits = entries(cat.produits);
-    if (!produits.length) return `<div class="panel"><p class="muted small">La catégorie ${cat.nom} n'a aucun produit. Ajoute-les dans Admin → Stock.</p></div>`;
+    if (!produits.length) return "";
 
     return `<div class="panel">
       <div class="panel-head"><h2>${cat.emoji || ""} Quotas par produit — ${cat.nom}</h2></div>
@@ -76,7 +70,7 @@ async function chargerQuotasProduits(membres, actions) {
               .reduce((acc, a) => acc + Number(a.quantite || 0), 0);
             const pct = quota > 0 ? Math.round(fait / quota * 100) : 0;
             return `<td style="min-width:130px;">
-              ${isAdmin ? `<input type="number" value="${quota}" style="max-width:80px;margin-bottom:6px;" onchange="majQuotaProduit('${m.id}','${pid}', this.value)">` : `<div class="small muted">Cible : ${quota}</div>`}
+              <div class="small muted">Cible : ${quota}</div>
               <div class="small muted">Fait : ${fait}</div>
               ${barreHtml(pct)}
             </td>`;
@@ -85,10 +79,6 @@ async function chargerQuotasProduits(membres, actions) {
       </table>
     </div>`;
   }).join("");
-}
-async function majQuotaProduit(membreId, pid, val) {
-  await db.ref(`quotas_produits/${membreId}/${pid}`).set(Number(val) || 0);
-  toast("Quota produit mis à jour.");
 }
 
 async function chargerQuotas() {
@@ -100,29 +90,23 @@ async function chargerQuotas() {
   const membres = entries(snapM.val()).map(([id, m]) => ({ id, ...m })).filter(m => m.actif !== false);
   const actions = entries(snapA.val()).map(([id, a]) => a);
 
-  const isAdmin = SESSION.role === "admin";
   document.getElementById("tblQuotas").innerHTML = membres.length ? membres.map(m => {
     const fait = actions.filter(a => a.membre_id === m.id && a.resultat === "Réussite").reduce((acc, a) => acc + Number(a.quantite || 0), 0);
     const quota = Number(m.quota) || 0;
     const pct = quota > 0 ? Math.min(100, Math.round(fait / quota * 100)) : 0;
     return `<tr>
       <td>${m.prenom} ${m.nom || ""}</td>
-      <td>${isAdmin ? `<input type="number" value="${quota}" style="max-width:90px" onchange="majQuota('${m.id}', this.value)">` : quota}</td>
+      <td>${quota}</td>
       <td>${fait}</td>
       <td style="min-width:140px;">
         <div style="background:var(--bg-2); border-radius:6px; height:8px; overflow:hidden;">
           <div style="height:100%; width:${pct}%; background:${pct >= 100 ? 'var(--success)' : 'var(--steel)'};"></div>
         </div>
       </td>
-      ${isAdmin ? '<td></td>' : ''}
     </tr>`;
-  }).join("") : '<tr class="empty-row"><td colspan="5">Aucun membre</td></tr>';
+  }).join("") : '<tr class="empty-row"><td colspan="4">Aucun membre</td></tr>';
 
   await chargerQuotasProduits(membres, actions);
-}
-async function majQuota(id, val) {
-  await db.ref("membres/" + id + "/quota").set(Number(val) || 0);
-  toast("Quota mis à jour.");
 }
 
 (async function () {

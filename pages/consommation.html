@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Consommation — Klan Nostrad</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+<div id="shell"></div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="../js/firebase-config.js"></script>
+<script src="../js/app.js"></script>
+<script>
+let SESSION, STOCK = {}, MEMBRES = {};
+
+function renderContent() {
+  document.getElementById("content").innerHTML = `
+    <h1>Consommation</h1>
+    <div class="sigil-rule"></div>
+    <p class="muted small">Pour tracer quand un personnage consomme/utilise un produit du stock personnel (ex: se pique) — retire le produit du stock sans vente ni gain d'argent.</p>
+
+    <div class="panel mt16">
+      <div class="panel-head"><h2>Nouvelle consommation</h2></div>
+      <div class="row">
+        <div><label class="l">Membre</label><select id="cMembre"></select></div>
+        <div><label class="l">Produit</label><select id="cProduit"></select></div>
+        <div><label class="l">Quantité</label><input type="number" id="cQte" value="1" min="1"></div>
+      </div>
+      <div class="row mt8">
+        <div><label class="l">Date</label><input type="date" id="cDate"></div>
+        <div style="flex:2"><label class="l">Notes (optionnel)</label><input type="text" id="cNotes" placeholder="Contexte RP, raison…"></div>
+      </div>
+      <button class="btn btn-primary mt16" onclick="ajouterConsommation()">Enregistrer la consommation</button>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Historique</h2>
+        <select id="filtMembre" onchange="renderTable()" style="max-width:220px;"><option value="">Tous les membres</option></select>
+      </div>
+      <table><thead><tr><th>Date</th><th>Membre</th><th>Produit</th><th>Qté</th><th>Notes</th><th></th></tr></thead>
+        <tbody id="tblConso"><tr class="empty-row"><td colspan="6">Chargement…</td></tr></tbody></table>
+    </div>
+  `;
+  document.getElementById("cDate").value = todayISO();
+}
+
+async function chargerListes() {
+  const [snapM, snapS] = await Promise.all([db.ref("membres").once("value"), db.ref("stock").once("value")]);
+  MEMBRES = snapM.val() || {};
+  STOCK = snapS.val() || {};
+
+  const selM = document.getElementById("cMembre"), filtM = document.getElementById("filtMembre");
+  entries(MEMBRES).forEach(([id, m]) => {
+    if (m.actif === false) return;
+    const label = m.prenom + (m.nom ? " " + m.nom : "");
+    selM.appendChild(new Option(label, id, id === SESSION.id, id === SESSION.id));
+    filtM.appendChild(new Option(label, id));
+  });
+
+  const selP = document.getElementById("cProduit");
+  selP.innerHTML = "";
+  entries(STOCK).forEach(([catId, cat]) => entries(cat.produits).forEach(([pid, p]) =>
+    selP.appendChild(new Option(`${cat.emoji || ""} ${cat.nom} — ${p.nom}`, catId + "::" + pid))
+  ));
+  if (!selP.options.length) selP.innerHTML = '<option value="">Aucun produit — configure le stock dans Admin</option>';
+}
+
+async function ajouterConsommation() {
+  const val = document.getElementById("cProduit").value;
+  if (!val) { toast("Sélectionnez un produit.", true); return; }
+  const [catId, pid] = val.split("::");
+  const membreId = document.getElementById("cMembre").value;
+  const qte = Number(document.getElementById("cQte").value) || 0;
+  const m = MEMBRES[membreId];
+  if (!m || qte <= 0) { toast("Complétez le formulaire.", true); return; }
+  const prod = STOCK[catId].produits[pid];
+  const date = document.getElementById("cDate").value || todayISO();
+
+  const stockRef = db.ref(`stock/${catId}/produits/${pid}/stock`);
+  const snap = await stockRef.once("value");
+  const current = Number(snap.val()) || 0;
+  await stockRef.set(Math.max(0, current - qte));
+
+  const id = uid();
+  await db.ref("consommations/" + id).set({
+    membre_id: membreId, prenom_membre: m.prenom, catId, prodId: pid, produit_nom: prod.nom,
+    quantite: qte, notes: document.getElementById("cNotes").value.trim(), date, createdAt: Date.now()
+  });
+  await db.ref("journal_stock/" + uid()).set({
+    date, membre: m.prenom, action: "Consommation personnelle", quantite: qte, produit: prod.nom, createdAt: Date.now()
+  });
+
+  toast("Consommation enregistrée.");
+  document.getElementById("cNotes").value = "";
+  await chargerListes();
+  await renderTable();
+}
+
+async function renderTable() {
+  const snap = await db.ref("consommations").once("value");
+  const list = entries(snap.val()).map(([id, c]) => ({ id, ...c })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const fm = document.getElementById("filtMembre").value;
+  const rows = list.filter(c => !fm || c.membre_id === fm);
+  const canDelete = SESSION.role === "admin";
+
+  document.getElementById("tblConso").innerHTML = rows.length ? rows.map(c => `
+    <tr><td>${c.date}</td><td>${c.prenom_membre}</td><td>${c.produit_nom}</td><td>${c.quantite}</td><td class="small muted">${c.notes || "-"}</td>
+    <td>${canDelete ? `<span class="btn btn-sm btn-danger" onclick="supprimerConsommation('${c.id}')">Suppr.</span>` : ""}</td></tr>
+  `).join("") : '<tr class="empty-row"><td colspan="6">Aucune consommation enregistrée</td></tr>';
+}
+
+async function supprimerConsommation(id) {
+  if (!confirm("Supprimer cette consommation ? Le stock sera réajouté automatiquement (rollback).")) return;
+  const snap = await db.ref("consommations/" + id).once("value");
+  const c = snap.val();
+  if (c) {
+    const stockRef = db.ref(`stock/${c.catId}/produits/${c.prodId}/stock`);
+    const sSnap = await stockRef.once("value");
+    const current = Number(sSnap.val()) || 0;
+    await stockRef.set(current + c.quantite);
+  }
+  await db.ref("consommations/" + id).remove();
+  toast("Consommation supprimée, stock réajusté.");
+  renderTable();
+}
+
+(async function () {
+  SESSION = await initShell("consommation", "Consommation");
+  if (!SESSION) return;
+  renderContent();
+  await chargerListes();
+  await renderTable();
+})();
+</script>
+</body>
+</html>

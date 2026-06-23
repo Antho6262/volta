@@ -107,8 +107,10 @@ Tony Diaz (Fondateur), Silver, Baba, Amir, Rick, Sam, Michael, Robin, Jack — q
 1. Système de "produit variable" (cat_variable) pour les actions type Vente de Drogue.
 2. Bouton d'import rapide des 5 actions classiques + catégories de stock associées.
 3. Édition des produits de stock directement dans Admin → Stock (nom/prix/stock/seuil + bouton Enregistrer), en plus de la suppression.
-4. Quotas par produit (ex: par drogue) par membre, en plus du quota global d'actions — page Quotas.
+4. Quotas par produit (ex: par drogue) par membre, en plus du quota global d'actions.
 5. Logo (médaillon doré recadré depuis le sceau) dans la sidebar et la page de connexion.
+6. **Quotas (global + par produit) déplacés dans Admin → onglet Quotas — édition réservée aux admins.** La page "Quotas" du menu principal est désormais en lecture seule pour tout le monde (plus aucun champ modifiable).
+7. **Nouvelle page "Consommation"** (menu principal, icône 💉) : permet de tracer quand un personnage consomme un produit du stock pour lui-même (ex: se pique) sans vente — retire le produit du stock, garde un historique par membre, suppression admin avec rollback du stock. Stocké dans `consommations/{id}`.
 
 ## AJOUTER UNE NOUVELLE PAGE — CHECKLIST
 1. Créer `pages/ma-page.html` (copier structure existante, shell `initShell('ma-page', 'Titre')`).

@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { page: "tracker",      icon: "📋", label: "Tracker",      file: "tracker.html" },
   { page: "stats",        icon: "📊", label: "Stats",        file: "stats.html" },
   { page: "stock",        icon: "📦", label: "Stock",        file: "stock.html" },
+  { page: "consommation", icon: "💉", label: "Consommation", file: "consommation.html" },
   { page: "logs",         icon: "📜", label: "Logs",         file: "logs.html" },
   { page: "quotas",       icon: "🎯", label: "Quotas",       file: "quotas.html" },
   { page: "objectifs",    icon: "🏆", label: "Objectifs",    file: "objectifs.html" },

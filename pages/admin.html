@@ -15,7 +15,7 @@
 <script src="../js/app.js"></script>
 <script>
 let SESSION;
-const TABS = ["semaines", "membres", "stock", "actions", "grades", "permissions", "config"];
+const TABS = ["semaines", "membres", "stock", "actions", "quotas", "grades", "permissions", "config"];
 let currentTab = "semaines";
 
 function renderContent() {
@@ -39,6 +39,7 @@ async function loadTab(t) {
   if (t === "membres") return tabMembres(body);
   if (t === "stock") return tabStock(body);
   if (t === "actions") return tabActions(body);
+  if (t === "quotas") return tabQuotas(body);
   if (t === "grades") return tabGrades(body);
   if (t === "permissions") return tabPermissions(body);
   if (t === "config") return tabConfig(body);
@@ -364,6 +365,84 @@ async function creerAction() {
   loadTab("actions");
 }
 async function suppAction(id) { if (confirm("Supprimer cette action ?")) { await db.ref("actions_dispo/" + id).remove(); loadTab("actions"); } }
+
+/* ===================== QUOTAS ===================== */
+async function getActiveWeekAdmin() {
+  const snap = await db.ref("semaines").once("value");
+  const list = entries(snap.val()).map(([id, s]) => ({ id, ...s }));
+  list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  return list.find(s => s.bloquee !== true) || list[0] || null;
+}
+function barreAdmin(pct) {
+  return `<div style="background:var(--bg-2); border-radius:6px; height:8px; overflow:hidden; min-width:90px;">
+    <div style="height:100%; width:${Math.min(100, pct)}%; background:${pct >= 100 ? 'var(--success)' : 'var(--steel)'};"></div></div>`;
+}
+async function tabQuotas(body) {
+  const week = await getActiveWeekAdmin();
+  const [snapM, snapAc, snapAcDispo, snapS, snapQP] = await Promise.all([
+    db.ref("membres").once("value"),
+    week ? db.ref("actions/" + week.id).once("value") : Promise.resolve({ val: () => null }),
+    db.ref("actions_dispo").once("value"),
+    db.ref("stock").once("value"),
+    db.ref("quotas_produits").once("value")
+  ]);
+  const membres = entries(snapM.val()).map(([id, m]) => ({ id, ...m })).filter(m => m.actif !== false);
+  const actions = entries(snapAc.val()).map(([id, a]) => a);
+  const actionsDispo = snapAcDispo.val() || {};
+  const stock = snapS.val() || {};
+  const quotasProduits = snapQP.val() || {};
+
+  body.innerHTML = `
+    <div class="panel">
+      <div class="panel-head"><h2>Quota global (nb d'actions / semaine)</h2></div>
+      <table><thead><tr><th>Membre</th><th>Quota</th><th>Réalisé</th><th>Progression</th></tr></thead>
+        <tbody>${membres.length ? membres.map(m => {
+          const fait = actions.filter(a => a.membre_id === m.id && a.resultat === "Réussite").reduce((acc, a) => acc + Number(a.quantite || 0), 0);
+          const quota = Number(m.quota) || 0;
+          const pct = quota > 0 ? Math.round(fait / quota * 100) : 0;
+          return `<tr><td>${m.prenom} ${m.nom || ""}</td>
+            <td><input type="number" value="${quota}" style="max-width:90px" onchange="majQuotaAdmin('${m.id}', this.value)"></td>
+            <td>${fait}</td><td>${barreAdmin(pct)}</td></tr>`;
+        }).join("") : '<tr class="empty-row"><td colspan="4">Aucun membre</td></tr>'}</tbody></table>
+    </div>
+    <div id="quotasProduitsAdminWrap"></div>
+  `;
+
+  const catIds = [...new Set(Object.values(actionsDispo).map(a => a.cat_variable).filter(Boolean))];
+  const wrap = document.getElementById("quotasProduitsAdminWrap");
+  if (!catIds.length) {
+    wrap.innerHTML = '<div class="panel"><p class="muted small">Aucune action avec produit variable (ex: Vente de Drogue) n\'est configurée dans l\'onglet Actions.</p></div>';
+    return;
+  }
+  wrap.innerHTML = catIds.map(catId => {
+    const cat = stock[catId];
+    if (!cat) return "";
+    const produits = entries(cat.produits);
+    if (!produits.length) return `<div class="panel"><p class="muted small">La catégorie ${cat.nom} n'a aucun produit. Ajoute-les dans l'onglet Stock.</p></div>`;
+    return `<div class="panel">
+      <div class="panel-head"><h2>${cat.emoji || ""} Quotas par produit — ${cat.nom}</h2></div>
+      <table><thead><tr><th>Membre</th>${produits.map(([pid, p]) => `<th>${p.nom}</th>`).join("")}</tr></thead>
+        <tbody>${membres.map(m => `<tr><td>${m.prenom}</td>${produits.map(([pid, p]) => {
+          const quota = Number((quotasProduits[m.id] || {})[pid]) || 0;
+          const fait = actions.filter(a => a.membre_id === m.id && a.produit_drogue_id === pid && a.resultat === "Réussite")
+            .reduce((acc, a) => acc + Number(a.quantite || 0), 0);
+          const pct = quota > 0 ? Math.round(fait / quota * 100) : 0;
+          return `<td style="min-width:130px;">
+            <input type="number" value="${quota}" style="max-width:80px;margin-bottom:6px;" onchange="majQuotaProduitAdmin('${m.id}','${pid}', this.value)">
+            <div class="small muted">Fait : ${fait}</div>${barreAdmin(pct)}
+          </td>`;
+        }).join("")}</tr>`).join("")}</tbody></table>
+    </div>`;
+  }).join("");
+}
+async function majQuotaAdmin(id, val) {
+  await db.ref("membres/" + id + "/quota").set(Number(val) || 0);
+  toast("Quota mis à jour.");
+}
+async function majQuotaProduitAdmin(membreId, pid, val) {
+  await db.ref(`quotas_produits/${membreId}/${pid}`).set(Number(val) || 0);
+  toast("Quota produit mis à jour.");
+}
 
 /* ===================== GRADES ===================== */
 async function tabGrades(body) {

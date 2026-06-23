@@ -29,6 +29,7 @@ const PAGES_DISPO = [
   { page: "tracker",       label: "Tracker" },
   { page: "stats",         label: "Stats" },
   { page: "stock",         label: "Stock" },
+  { page: "consommation",  label: "Consommation" },
   { page: "logs",          label: "Logs" },
   { page: "quotas",        label: "Quotas" },
   { page: "objectifs",     label: "Objectifs" },
