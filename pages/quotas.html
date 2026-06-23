@@ -44,11 +44,11 @@ function barreHtml(pct) {
 async function chargerQuotasProduits(membres, actions) {
   const wrap = document.getElementById("quotasProduitsWrap");
   const [snapA, snapS, snapQ] = await Promise.all([
-    db.ref("actions_dispo").once("value"), db.ref("stock").once("value"), db.ref("quotas_produits").once("value")
+    db.ref("actions_dispo").once("value"), db.ref("stock").once("value"), db.ref("quotas_categorie").once("value")
   ]);
   const actionsDispo = snapA.val() || {};
   const stock = snapS.val() || {};
-  const quotasProduits = snapQ.val() || {};
+  const quotasCategorie = snapQ.val() || {};
 
   const catIds = [...new Set(Object.values(actionsDispo).map(a => a.cat_variable).filter(Boolean))];
   if (!catIds.length) { wrap.innerHTML = ""; return; }
@@ -56,25 +56,20 @@ async function chargerQuotasProduits(membres, actions) {
   wrap.innerHTML = catIds.map(catId => {
     const cat = stock[catId];
     if (!cat) return "";
-    const produits = entries(cat.produits);
-    if (!produits.length) return "";
+    const produitIds = new Set(Object.keys(cat.produits || {}));
 
     return `<div class="panel">
-      <div class="panel-head"><h2>${cat.emoji || ""} Quotas par produit — ${cat.nom}</h2></div>
+      <div class="panel-head"><h2>${cat.emoji || ""} Quota ${cat.nom} (toutes confondues)</h2></div>
       <table>
-        <thead><tr><th>Membre</th>${produits.map(([pid, p]) => `<th>${p.nom}</th>`).join("")}</tr></thead>
+        <thead><tr><th>Membre</th><th>Cible</th><th>Réalisé</th><th>Progression</th></tr></thead>
         <tbody>
-          ${membres.map(m => `<tr><td>${m.prenom}</td>${produits.map(([pid, p]) => {
-            const quota = Number((quotasProduits[m.id] || {})[pid]) || 0;
-            const fait = actions.filter(a => a.membre_id === m.id && a.produit_drogue_id === pid && a.resultat === "Réussite")
+          ${membres.map(m => {
+            const quota = Number((quotasCategorie[m.id] || {})[catId]) || 0;
+            const fait = actions.filter(a => a.membre_id === m.id && produitIds.has(a.produit_drogue_id) && a.resultat === "Réussite")
               .reduce((acc, a) => acc + Number(a.quantite || 0), 0);
             const pct = quota > 0 ? Math.round(fait / quota * 100) : 0;
-            return `<td style="min-width:130px;">
-              <div class="small muted">Cible : ${quota}</div>
-              <div class="small muted">Fait : ${fait}</div>
-              ${barreHtml(pct)}
-            </td>`;
-          }).join("")}</tr>`).join("")}
+            return `<tr><td>${m.prenom}</td><td>${quota}</td><td>${fait}</td><td>${barreHtml(pct)}</td></tr>`;
+          }).join("")}
         </tbody>
       </table>
     </div>`;
