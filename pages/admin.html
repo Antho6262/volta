@@ -149,15 +149,50 @@ async function tabMembres(body) {
     </div>
     <div class="panel">
       <div class="panel-head"><h2>Membres (${membres.length})</h2></div>
-      <table><thead><tr><th>Prénom</th><th>Nom</th><th>Grade</th><th>Rôle</th><th>Actif</th><th></th></tr></thead>
+      <table><thead><tr><th>Prénom</th><th>Nom</th><th>Grade</th><th>Quota</th><th>Rôle</th><th>Actif</th><th>Actions</th></tr></thead>
         <tbody>${membres.length ? membres.map(m => `
-          <tr><td>${m.prenom}</td><td>${m.nom || ""}</td><td>${m.grade || "-"}</td>
-          <td><span class="badge ${m.role === 'admin' ? 'badge-steel' : ''}">${m.role || 'membre'}</span></td>
-          <td><span class="badge ${m.actif !== false ? 'badge-ok' : 'badge-fail'}" style="cursor:pointer" onclick="toggleActif('${m.id}', ${m.actif === false})">${m.actif !== false ? 'Actif' : 'Inactif'}</span></td>
-          <td>${m.id === 'tony_diaz' ? '<span class="small muted">Fondateur</span>' : `<span class="btn btn-sm btn-danger" onclick="suppMembre('${m.id}')">Suppr.</span>`}</td></tr>
-        `).join("") : '<tr class="empty-row"><td colspan="6">Aucun membre</td></tr>'}</tbody></table>
+          <tr>
+            <td><input type="text" value="${m.prenom}" id="mEdPrenom_${m.id}" style="min-width:110px;"></td>
+            <td><input type="text" value="${m.nom || ''}" id="mEdNom_${m.id}" style="min-width:110px;"></td>
+            <td><select id="mEdGrade_${m.id}" style="min-width:130px;">${grades.map(g => `<option ${g === m.grade ? 'selected' : ''}>${g}</option>`).join("")}</select></td>
+            <td><input type="number" value="${Number(m.quota) || 0}" id="mEdQuota_${m.id}" style="max-width:70px;"></td>
+            <td><span class="badge ${m.role === 'admin' ? 'badge-steel' : ''}">${m.role || 'membre'}</span></td>
+            <td><span class="badge ${m.actif !== false ? 'badge-ok' : 'badge-fail'}">${m.actif !== false ? 'Actif' : 'Inactif'}</span></td>
+            <td style="white-space:nowrap;">
+              <span class="btn btn-sm btn-gold" title="Enregistrer (prénom, nom, grade, quota)" onclick="modifierMembre('${m.id}')">💾</span>
+              <span class="btn btn-sm" title="Changer le mot de passe" onclick="changerPassMembre('${m.id}','${m.prenom}')">🔑</span>
+              <span class="btn btn-sm" title="${m.role === 'admin' ? 'Retirer admin' : 'Passer admin'}" onclick="toggleAdmin('${m.id}', ${m.role !== 'admin'})">🛡️</span>
+              <span class="btn btn-sm" title="${m.actif !== false ? 'Désactiver' : 'Activer'}" onclick="toggleActif('${m.id}', ${m.actif === false})">${m.actif !== false ? '⏸️' : '▶️'}</span>
+              ${m.id === 'tony_diaz' ? '' : `<span class="btn btn-sm btn-danger" title="Supprimer le membre" onclick="suppMembre('${m.id}')">🗑️</span>`}
+            </td>
+          </tr>
+        `).join("") : '<tr class="empty-row"><td colspan="7">Aucun membre</td></tr>'}</tbody></table>
     </div>
   `;
+}
+async function modifierMembre(id) {
+  const prenom = document.getElementById("mEdPrenom_" + id).value.trim();
+  if (!prenom) { toast("Prénom requis.", true); return; }
+  await db.ref("membres/" + id).update({
+    prenom, nom: document.getElementById("mEdNom_" + id).value.trim(),
+    grade: document.getElementById("mEdGrade_" + id).value,
+    quota: Number(document.getElementById("mEdQuota_" + id).value) || 0
+  });
+  toast("Membre mis à jour.");
+  loadTab("membres");
+}
+async function changerPassMembre(id, prenom) {
+  const val = window.prompt("Nouveau mot de passe pour " + prenom + " :");
+  if (val === null) return;
+  if (val.trim().length < 4) { toast("Mot de passe trop court.", true); return; }
+  await db.ref("membres/" + id + "/mot_de_passe").set(val.trim());
+  toast("Mot de passe mis à jour.");
+}
+async function toggleAdmin(id, makeAdmin) {
+  if (!confirm(makeAdmin ? "Donner le rôle admin à ce membre ?" : "Retirer le rôle admin à ce membre ?")) return;
+  await db.ref("membres/" + id + "/role").set(makeAdmin ? "admin" : "membre");
+  toast("Rôle mis à jour.");
+  loadTab("membres");
 }
 async function ajouterMembre() {
   const prenom = document.getElementById("mPrenom").value.trim();
