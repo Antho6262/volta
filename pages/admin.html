@@ -233,7 +233,16 @@ async function tabActions(body) {
   const cats = entries(snapS.val()).map(([id, c]) => ({ id, ...c }));
   const prodOptions = cats.flatMap(c => entries(c.produits).map(([pid, p]) => `<option value="${c.id}::${pid}">${c.emoji || ""} ${c.nom} — ${p.nom}</option>`)).join("");
 
+  const catOptions = cats.map(c => `<option value="${c.id}">${c.emoji || ""} ${c.nom}</option>`).join("");
+
   body.innerHTML = `
+    <div class="panel" style="border-color:rgba(212,175,55,.3);">
+      <div class="panel-head"><h2>Import rapide — config type « Sombra »</h2></div>
+      <p class="small muted">Crée en un clic les 5 actions classiques (Vente de Drogue, ATM, Cambu, Plantation, Vente de Branches)
+      avec leurs catégories de stock associées. Tu pourras renommer/ajuster ensuite.</p>
+      <button class="btn btn-gold mt8" onclick="importerConfigSombra()">Importer la config Sombra</button>
+    </div>
+
     <div class="panel">
       <div class="panel-head"><h2>Nouvelle action</h2></div>
       <div class="row">
@@ -242,27 +251,75 @@ async function tabActions(body) {
         <input type="number" id="aPropre" placeholder="$ propre / unité" value="0">
       </div>
       <div class="row mt8" id="recipeBuilder">
-        <select id="recipeProd"><option value="">— Produit consommé (optionnel) —</option>${prodOptions}</select>
+        <select id="recipeProd"><option value="">— Produit consommé fixe (optionnel) —</option>${prodOptions}</select>
         <input type="number" id="recipeQty" placeholder="Qté consommée / unité" value="1">
         <button class="btn btn-sm" onclick="addRecipeLine()" type="button">+ Ajouter à la recette</button>
       </div>
       <div id="recipeLines" class="small muted mt8"></div>
+      <div class="row mt8">
+        <select id="aCatVariable"><option value="">— Ou : produit choisi au moment de l'action (ex: Vente de Drogue) —</option>${catOptions}</select>
+      </div>
+      <p class="small muted mt8">Soit une recette fixe (toujours le même produit, ex: ATM → Boîtier de piratage), soit une catégorie « variable » où le membre choisit le produit exact en saisissant l'action (ex: Vente de Drogue → quelle drogue).</p>
       <button class="btn btn-primary mt16" onclick="creerAction()">Créer l'action</button>
     </div>
     <div class="panel">
       <div class="panel-head"><h2>Actions disponibles</h2></div>
-      <table><thead><tr><th>Nom</th><th>$ sale/u</th><th>$ propre/u</th><th>Recette stock</th><th></th></tr></thead>
-        <tbody>${actions.length ? actions.map(a => `
-          <tr><td>${a.nom}</td><td>${formatMoney(a.montant_sale || 0)}</td><td>${formatMoney(a.montant_propre || 0)}</td>
-          <td class="small">${(a.recipe || []).map(r => {
+      <table><thead><tr><th>Nom</th><th>$ sale/u</th><th>$ propre/u</th><th>Stock</th><th></th></tr></thead>
+        <tbody>${actions.length ? actions.map(a => {
+          const catVar = a.cat_variable ? cats.find(c => c.id === a.cat_variable) : null;
+          const recetteTxt = (a.recipe || []).map(r => {
             const cat = cats.find(c => c.id === r.catId);
             const prod = cat && cat.produits ? cat.produits[r.prodId] : null;
             return prod ? `${prod.nom} x${r.qty}` : "—";
-          }).join(", ") || "—"}</td>
-          <td><span class="btn btn-sm btn-danger" onclick="suppAction('${a.id}')">Suppr.</span></td></tr>
-        `).join("") : '<tr class="empty-row"><td colspan="5">Aucune action définie</td></tr>'}</tbody></table>
+          }).join(", ");
+          return `<tr><td>${a.nom}</td><td>${formatMoney(a.montant_sale || 0)}</td><td>${formatMoney(a.montant_propre || 0)}</td>
+          <td class="small">${catVar ? `Produit choisi (${catVar.emoji || ""} ${catVar.nom})` : (recetteTxt || "—")}</td>
+          <td><span class="btn btn-sm btn-danger" onclick="suppAction('${a.id}')">Suppr.</span></td></tr>`;
+        }).join("") : '<tr class="empty-row"><td colspan="5">Aucune action définie</td></tr>'}</tbody></table>
     </div>
   `;
+}
+
+async function importerConfigSombra() {
+  if (!confirm("Importer la configuration type Sombra (catégories de stock + 5 actions) ? Les éléments déjà existants avec le même nom ne seront pas dupliqués si tu annules après vérification.")) return;
+
+  const cats = {
+    drogue_cat: { nom: "Drogue", emoji: "💊", produits: {
+      meth: { nom: "Meth", prix: 100, stock: 0, seuil: 5 },
+      coke: { nom: "Coke", prix: 150, stock: 0, seuil: 5 },
+      weed: { nom: "Weed", prix: 80, stock: 0, seuil: 5 }
+    }},
+    materiel_cat: { nom: "Matériel", emoji: "🛠️", produits: {
+      boitier: { nom: "Boîtier de piratage", prix: 0, stock: 0, seuil: 2 },
+      crochetage: { nom: "Outil de crochetage", prix: 0, stock: 0, seuil: 2 }
+    }},
+    plantation_cat: { nom: "Plantation", emoji: "🌱", produits: {
+      eau: { nom: "Eau", prix: 0, stock: 0, seuil: 5 },
+      fertilisant: { nom: "Fertilisant", prix: 0, stock: 0, seuil: 5 },
+      graine: { nom: "Graine", prix: 0, stock: 0, seuil: 5 },
+      pot: { nom: "Pot", prix: 0, stock: 0, seuil: 5 }
+    }},
+    branches_cat: { nom: "Branches", emoji: "🌿", produits: {
+      branche: { nom: "Branche de cannabis", prix: 0, stock: 0, seuil: 5 }
+    }}
+  };
+  for (const [catId, cat] of Object.entries(cats)) {
+    await db.ref("stock/" + catId).update(cat);
+  }
+
+  await db.ref("actions_dispo").update({
+    vente_drogue: { nom: "Vente de Drogue", montant_sale: 0, montant_propre: 0, recipe: [], cat_variable: "drogue_cat" },
+    atm: { nom: "ATM", montant_sale: 0, montant_propre: 0, recipe: [{ catId: "materiel_cat", prodId: "boitier", qty: 1 }] },
+    cambu: { nom: "Cambu", montant_sale: 0, montant_propre: 0, recipe: [{ catId: "materiel_cat", prodId: "crochetage", qty: 1 }] },
+    plantation: { nom: "Plantation", montant_sale: 0, montant_propre: 0, recipe: [
+      { catId: "plantation_cat", prodId: "eau", qty: 1 }, { catId: "plantation_cat", prodId: "fertilisant", qty: 1 },
+      { catId: "plantation_cat", prodId: "graine", qty: 1 }, { catId: "plantation_cat", prodId: "pot", qty: 1 }
+    ]},
+    vente_branches: { nom: "Vente de Branches", montant_sale: 0, montant_propre: 0, recipe: [{ catId: "branches_cat", prodId: "branche", qty: 1 }] }
+  });
+
+  toast("Config Sombra importée — ajuste les prix/stocks dans Admin → Stock.");
+  loadTab("actions");
 }
 let RECIPE_LINES = [];
 function addRecipeLine() {
@@ -279,7 +336,8 @@ async function creerAction() {
   await db.ref("actions_dispo/" + uid()).set({
     nom, montant_sale: Number(document.getElementById("aSale").value) || 0,
     montant_propre: Number(document.getElementById("aPropre").value) || 0,
-    recipe: RECIPE_LINES
+    recipe: RECIPE_LINES,
+    cat_variable: document.getElementById("aCatVariable").value || null
   });
   RECIPE_LINES = [];
   toast("Action créée.");

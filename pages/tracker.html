@@ -33,8 +33,11 @@ function renderContent() {
       <div class="panel-head"><h2>Nouvelle action</h2></div>
       <div class="row">
         <div><label class="l">Membre</label><select id="fMembre"></select></div>
-        <div><label class="l">Action</label><select id="fAction" onchange="autoFillMontants()"></select></div>
+        <div><label class="l">Action</label><select id="fAction" onchange="onActionChange()"></select></div>
         <div><label class="l">Quantité</label><input type="number" id="fQte" value="1" min="1" onchange="autoFillMontants()"></div>
+      </div>
+      <div class="row mt8" id="produitVarWrap" style="display:none;">
+        <div><label class="l">Produit</label><select id="fProduitVar"></select></div>
       </div>
       <div class="row mt8">
         <div><label class="l">Résultat</label><select id="fResultat" onchange="toggleRaison()"><option>Réussite</option><option>Échec</option></select></div>
@@ -69,6 +72,22 @@ function renderContent() {
 
 function toggleRaison() {
   document.getElementById("raisonWrap").style.display = document.getElementById("fResultat").value === "Échec" ? "block" : "none";
+}
+
+function onActionChange() {
+  const actId = document.getElementById("fAction").value;
+  const act = ACTIONS_DISPO[actId];
+  const wrap = document.getElementById("produitVarWrap");
+  const sel = document.getElementById("fProduitVar");
+  if (act && act.cat_variable && STOCK[act.cat_variable]) {
+    wrap.style.display = "block";
+    const cat = STOCK[act.cat_variable];
+    sel.innerHTML = Object.entries(cat.produits || {}).map(([pid, p]) => `<option value="${pid}">${p.nom}</option>`).join("") || '<option value="">Aucun produit dans cette catégorie</option>';
+  } else {
+    wrap.style.display = "none";
+    sel.innerHTML = "";
+  }
+  autoFillMontants();
 }
 
 function autoFillMontants() {
@@ -106,7 +125,7 @@ async function chargerListes() {
       filtA.appendChild(new Option(a.nom, id));
     });
   }
-  autoFillMontants();
+  onActionChange();
 }
 
 async function deduireStock(actionDef, quantite) {
@@ -138,6 +157,7 @@ async function ajouterAction() {
   const propre = Number(document.getElementById("fPropre").value) || 0;
   const m = MEMBRES[membreId], act = ACTIONS_DISPO[actionId];
   if (!m || !act || qte <= 0) { toast("Complétez le formulaire.", true); return; }
+  if (act.cat_variable && !document.getElementById("fProduitVar").value) { toast("Choisissez un produit.", true); return; }
 
   const entry = {
     membre_id: membreId, prenom_membre: m.prenom, nom_membre: m.nom || "", grade_membre: m.grade || "",
@@ -147,9 +167,24 @@ async function ajouterAction() {
     argent_sale: sale, argent_propre: propre, gains_totaux: sale + propre,
     createdAt: Date.now()
   };
+  if (act.cat_variable) {
+    const pid = document.getElementById("fProduitVar").value;
+    const prod = STOCK[act.cat_variable].produits[pid];
+    entry.produit_drogue = prod.nom;
+    entry.produit_drogue_id = pid;
+  }
   await db.ref("actions/" + ACTIVE_WEEK.id + "/" + uid()).set(entry);
 
   if (resultat === "Réussite") {
+    if (act.cat_variable) {
+      const pid = document.getElementById("fProduitVar").value;
+      const ref = db.ref(`stock/${act.cat_variable}/produits/${pid}/stock`);
+      const snap = await ref.once("value");
+      const current = Number(snap.val()) || 0;
+      const next = Math.max(0, current - qte);
+      await ref.set(next);
+      await db.ref("journal_stock/" + uid()).set({ date: entry.date, membre: m.prenom, action: act.nom, quantite: qte, produit: entry.produit_drogue, createdAt: Date.now() });
+    }
     await deduireStock(act, qte);
     if (sale > 0) await db.ref("argent/sale/" + uid()).set({ date: entry.date, description: "Action : " + act.nom, type: "Entrée", montant: sale, responsable: m.prenom, createdAt: Date.now() });
     if (propre > 0) await db.ref("argent/propre/" + uid()).set({ date: entry.date, description: "Action : " + act.nom, type: "Entrée", montant: propre, responsable: m.prenom, createdAt: Date.now() });
@@ -177,7 +212,7 @@ async function renderTable() {
     <tr>
       <td>${a.date} ${a.heure || ""}</td>
       <td>${a.prenom_membre}</td>
-      <td>${a.action}</td>
+      <td>${a.action}${a.produit_drogue ? ` <span class="muted small">(${a.produit_drogue})</span>` : ""}</td>
       <td>${a.quantite}</td>
       <td><span class="badge ${a.resultat === 'Réussite' ? 'badge-ok' : 'badge-fail'}">${a.resultat}</span></td>
       <td>${formatMoney(a.argent_sale)}</td>
