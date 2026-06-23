@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Paye — Klan Nostrad</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+<div id="shell"></div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="../js/firebase-config.js"></script>
+<script src="../js/app.js"></script>
+<script>
+let SESSION, SEMAINES = [], SEMAINE_SEL = null, TAUX_PAYE = 20;
+
+function renderContent() {
+  document.getElementById("content").innerHTML = `
+    <h1>Paye</h1>
+    <div class="sigil-rule"></div>
+    <p class="muted small">Montant suggéré = gains générés par le membre (actions réussies + blanchiment dont il est responsable) × taux de paye (${TAUX_PAYE}%, configurable dans Admin → Config).</p>
+
+    <div class="panel mt16">
+      <div class="row" style="align-items:flex-end;">
+        <div><label class="l">Semaine</label><select id="selSemaine" onchange="onSemaineChange()"></select></div>
+        <div><div class="small muted">Solde propre disponible</div><div class="stat-num gold" id="soldePropreDisp" style="font-size:20px;">0 $</div></div>
+        <div><div class="small muted">Total payé cette semaine</div><div class="stat-num" id="totalPayeDisp" style="font-size:20px;">0 $</div></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <table>
+        <thead><tr><th>Membre</th><th>Gains actions</th><th>Gains blanchiment</th><th>Total généré</th><th>Montant à payer</th><th>Argent</th><th></th></tr></thead>
+        <tbody id="tblPaye"><tr class="empty-row"><td colspan="7">Chargement…</td></tr></tbody></table>
+    </div>
+  `;
+}
+
+async function chargerSemaines() {
+  const snap = await db.ref("semaines").once("value");
+  SEMAINES = entries(snap.val()).map(([id, s]) => ({ id, ...s })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const sel = document.getElementById("selSemaine");
+  sel.innerHTML = SEMAINES.map(s => `<option value="${s.id}">${s.nom}${s.bloquee ? " (bloquée)" : " (active)"}</option>`).join("");
+  SEMAINE_SEL = SEMAINES.find(s => s.bloquee) || SEMAINES[0] || null;
+  if (SEMAINE_SEL) sel.value = SEMAINE_SEL.id;
+}
+
+function onSemaineChange() {
+  const id = document.getElementById("selSemaine").value;
+  SEMAINE_SEL = SEMAINES.find(s => s.id === id);
+  chargerPaye();
+}
+
+async function chargerPaye() {
+  if (!SEMAINE_SEL) { document.getElementById("tblPaye").innerHTML = '<tr class="empty-row"><td colspan="7">Aucune semaine</td></tr>'; return; }
+  const isAdmin = SESSION.role === "admin";
+  const debut = SEMAINE_SEL.createdAt || 0;
+  const fin = SEMAINE_SEL.closedAt || Date.now();
+
+  const [snapM, snapA, snapB, snapP, snapSale, snapPropre] = await Promise.all([
+    db.ref("membres").once("value"),
+    db.ref("actions/" + SEMAINE_SEL.id).once("value"),
+    db.ref("blanchiments").once("value"),
+    db.ref("payes/" + SEMAINE_SEL.id).once("value"),
+    db.ref("argent/sale").once("value"),
+    db.ref("argent/propre").once("value")
+  ]);
+  const membres = entries(snapM.val()).map(([id, m]) => ({ id, ...m })).filter(m => m.actif !== false);
+  const actions = entries(snapA.val()).map(([id, a]) => a);
+  const blanchiments = entries(snapB.val()).map(([id, b]) => b).filter(b => (b.createdAt || 0) >= debut && (b.createdAt || 0) <= fin);
+  const payes = snapP.val() || {};
+
+  const calcSolde = v => entries(v).reduce((acc, [, l]) => acc + (l.type === "Sortie" ? -Number(l.montant || 0) : Number(l.montant || 0)), 0);
+  document.getElementById("soldePropreDisp").textContent = formatMoney(calcSolde(snapPropre.val()));
+
+  let totalPaye = 0;
+  document.getElementById("tblPaye").innerHTML = membres.length ? membres.map(m => {
+    const gainsActions = actions.filter(a => a.membre_id === m.id && a.resultat === "Réussite").reduce((acc, a) => acc + Number(a.gains_totaux || 0), 0);
+    const gainsBlanchiment = blanchiments.filter(b => b.responsable === m.prenom).reduce((acc, b) => acc + Number(b.montant_propre || 0), 0);
+    const totalGenere = gainsActions + gainsBlanchiment;
+    const dejaPaye = payes[m.id];
+    const suggestion = Math.round(totalGenere * TAUX_PAYE / 100);
+    const montant = dejaPaye ? Number(dejaPaye.montant) || 0 : suggestion;
+    if (dejaPaye) totalPaye += Number(dejaPaye.montant) || 0;
+
+    return `<tr>
+      <td>${m.prenom} ${m.nom || ""}</td>
+      <td>${formatMoney(gainsActions)}</td>
+      <td>${formatMoney(gainsBlanchiment)}</td>
+      <td class="mono">${formatMoney(totalGenere)}</td>
+      <td>${isAdmin && !dejaPaye ? `<input type="number" value="${montant}" style="max-width:100px" id="montant_${m.id}">` : formatMoney(montant)}</td>
+      <td>${isAdmin && !dejaPaye ? `<select id="typeArgent_${m.id}"><option value="propre">Propre</option><option value="sale">Sale</option></select>` : "-"}</td>
+      <td>${dejaPaye ? '<span class="badge badge-ok">Payé</span>' : (isAdmin ? `<span class="btn btn-sm btn-gold" onclick="payer('${m.id}','${m.prenom}')">Payer</span>` : '<span class="badge badge-warn">En attente</span>')}</td>
+    </tr>`;
+  }).join("") : '<tr class="empty-row"><td colspan="7">Aucun membre</td></tr>';
+
+  document.getElementById("totalPayeDisp").textContent = formatMoney(totalPaye);
+}
+
+async function payer(membreId, prenom) {
+  const montant = Number(document.getElementById("montant_" + membreId).value) || 0;
+  if (montant <= 0) { toast("Montant invalide.", true); return; }
+  const typeArgent = document.getElementById("typeArgent_" + membreId).value;
+  if (!confirm(`Confirmer le paiement de ${formatMoney(montant)} (argent ${typeArgent}) à ${prenom} ?`)) return;
+
+  await db.ref(`payes/${SEMAINE_SEL.id}/${membreId}`).set({
+    montant, type_argent: typeArgent, date: todayISO(), par: SESSION.prenom, createdAt: Date.now()
+  });
+  await db.ref(`argent/${typeArgent}/` + uid()).set({
+    date: todayISO(), description: "Paye — " + prenom + " (" + SEMAINE_SEL.nom + ")",
+    type: "Sortie", montant, responsable: SESSION.prenom, createdAt: Date.now()
+  });
+
+  toast("Paiement enregistré.");
+  chargerPaye();
+}
+
+(async function () {
+  SESSION = await initShell("paye", "Paye");
+  if (!SESSION) return;
+  const snapCfg = await db.ref("config/taux_paye").once("value");
+  TAUX_PAYE = snapCfg.val() ?? 20;
+  renderContent();
+  await chargerSemaines();
+  await chargerPaye();
+})();
+</script>
+</body>
+</html>

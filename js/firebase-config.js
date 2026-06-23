@@ -34,6 +34,7 @@ const PAGES_DISPO = [
   { page: "quotas",        label: "Quotas" },
   { page: "objectifs",     label: "Objectifs" },
   { page: "blanchiment",   label: "Blanchiment" },
+  { page: "paye",          label: "Paye" },
   { page: "transactions",  label: "Transactions" },
   { page: "taxes",         label: "Taxes" },
   { page: "sanctions",     label: "Sanctions" },

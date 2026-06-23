@@ -111,6 +111,8 @@ Tony Diaz (Fondateur), Silver, Baba, Amir, Rick, Sam, Michael, Robin, Jack — q
 5. Logo (médaillon doré recadré depuis le sceau) dans la sidebar et la page de connexion.
 6. **Quotas (global + par produit) déplacés dans Admin → onglet Quotas — édition réservée aux admins.** La page "Quotas" du menu principal est désormais en lecture seule pour tout le monde (plus aucun champ modifiable).
 7. **Nouvelle page "Consommation"** (menu principal, icône 💉) : permet de tracer quand un personnage consomme un produit du stock pour lui-même (ex: se pique) sans vente — retire le produit du stock, garde un historique par membre, suppression admin avec rollback du stock. Stocké dans `consommations/{id}`.
+8. **Quota drogue passé en cible globale "toutes confondues"** (plus de quota par produit individuel) — stocké dans `quotas_categorie/{membreId}/{catId}`.
+9. **Nouvelle page "Paye"** (menu principal, icône 💰) : pour chaque semaine, calcule par membre ses gains générés (actions réussies + blanchiment dont il est responsable) × un taux de paye configurable (Admin → Config → `taux_paye`, défaut 20%). L'admin peut ajuster le montant puis valider le paiement (bouton "Payer"), ce qui débite `argent/sale` ou `argent/propre` (Sortie) et enregistre dans `payes/{semaineId}/{membreId}`. Les semaines stockent maintenant aussi `closedAt` (timestamp de blocage) pour borner précisément les gains/blanchiments rattachés à chaque semaine.
 
 ## AJOUTER UNE NOUVELLE PAGE — CHECKLIST
 1. Créer `pages/ma-page.html` (copier structure existante, shell `initShell('ma-page', 'Titre')`).

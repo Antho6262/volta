@@ -83,7 +83,7 @@ async function creerSemaine() {
   loadTab("semaines");
 }
 async function toggleSemaine(id, bloquee) {
-  await db.ref("semaines/" + id + "/bloquee").set(bloquee);
+  await db.ref("semaines/" + id).update({ bloquee, closedAt: bloquee ? Date.now() : null });
   loadTab("semaines");
 }
 async function suppSemaine(id) {
@@ -110,7 +110,7 @@ async function bloquerSemaine(id, nom) {
     `Gains propre : ${formatMoney(gainsPropre)}\n\n` +
     `Classement :\n${classement || "—"}`;
 
-  await db.ref("semaines/" + id + "/bloquee").set(true);
+  await db.ref("semaines/" + id).update({ bloquee: true, closedAt: Date.now() });
   document.getElementById("resumeWrap").style.display = "block";
   document.getElementById("resumeText").value = texte;
 
@@ -514,8 +514,10 @@ async function tabConfig(body) {
       <div class="panel-head"><h2>Paramètres généraux</h2></div>
       <div class="row">
         <div><label class="l">Taux de frais blanchiment (%)</label><input type="number" id="cfgTaux" value="${cfg.blanchiment_taux ?? 35}"></div>
+        <div><label class="l">Taux de paye (% des gains générés)</label><input type="number" id="cfgTauxPaye" value="${cfg.taux_paye ?? 20}"></div>
         <div><label class="l">Webhook Discord — résumé de semaine (optionnel)</label><input type="text" id="cfgWebhook" value="${cfg.discord_webhook_semaine || ''}" placeholder="https://discord.com/api/webhooks/..."></div>
       </div>
+      <p class="small muted mt8">Le taux de paye sert de suggestion dans l'onglet Paye : montant suggéré = gains générés par le membre × ce taux. Modifiable au cas par cas avant validation.</p>
       <button class="btn btn-primary mt16" onclick="saveConfig()">Enregistrer</button>
     </div>
   `;
@@ -523,6 +525,7 @@ async function tabConfig(body) {
 async function saveConfig() {
   await db.ref("config").update({
     blanchiment_taux: Number(document.getElementById("cfgTaux").value) || 35,
+    taux_paye: Number(document.getElementById("cfgTauxPaye").value) || 0,
     discord_webhook_semaine: document.getElementById("cfgWebhook").value.trim()
   });
   toast("Configuration enregistrée.");
