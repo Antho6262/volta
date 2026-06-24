@@ -32,12 +32,10 @@ const PAGES_DISPO = [
   { page: "consommation",  label: "Consommation" },
   { page: "logs",          label: "Logs" },
   { page: "quotas",        label: "Quotas" },
-  { page: "objectifs",     label: "Objectifs" },
   { page: "blanchiment",   label: "Blanchiment" },
   { page: "paye",          label: "Paye" },
   { page: "transactions",  label: "Transactions" },
   { page: "taxes",         label: "Taxes" },
-  { page: "sanctions",     label: "Sanctions" },
   { page: "admin",         label: "Admin" },
   { page: "profil",        label: "Profil" },
   { page: "tv",            label: "Mode TV" }
