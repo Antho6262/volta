@@ -86,7 +86,7 @@ async function chargerQuotas() {
   const actions = entries(snapA.val()).map(([id, a]) => a);
 
   document.getElementById("tblQuotas").innerHTML = membres.length ? membres.map(m => {
-    const fait = actions.filter(a => a.membre_id === m.id && a.resultat === "Réussite" && !a.produit_drogue_id).reduce((acc, a) => acc + Number(a.quantite || 0), 0);
+    const fait = actions.filter(a => a.membre_id === m.id && a.resultat === "Réussite").reduce((acc, a) => acc + (a.produit_drogue_id ? 1 : Number(a.quantite || 0)), 0);
     const quota = Number(m.quota) || 0;
     const pct = quota > 0 ? Math.min(100, Math.round(fait / quota * 100)) : 0;
     return `<tr>
