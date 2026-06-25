@@ -27,6 +27,7 @@ const db = firebase.database();
 const PAGES_DISPO = [
   { page: "dashboard",     label: "Dashboard" },
   { page: "tracker",       label: "Tracker" },
+  { page: "stats",         label: "Stats" },
   { page: "stock",         label: "Stock" },
   { page: "consommation",  label: "Consommation" },
   { page: "logs",          label: "Logs" },

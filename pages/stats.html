@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stats — Klan Nostrad</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+<div id="shell"></div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="../js/firebase-config.js"></script>
+<script src="../js/app.js"></script>
+<script>
+let SESSION;
+let MEMBRES = [], ACTIONS_DISPO = {}, SEMAINES = [], ACTIONS_ALL = [], PRODUITS_DROGUE = [];
+
+function renderContent() {
+  document.getElementById("content").innerHTML = `
+    <h1>Stats</h1>
+    <div class="sigil-rule"></div>
+
+    <div class="panel mt16">
+      <div class="row" style="align-items:flex-end; flex-wrap:wrap; gap:12px;">
+        <div><label class="l">Type</label><select id="selType" onchange="onTypeChange()">
+          <option value="tout">Tout</option>
+          <option value="action">Par action</option>
+          <option value="drogue">Vente de drogue</option>
+        </select></div>
+        <div id="wrapAction" style="display:none"><label class="l">Action</label><select id="selAction" onchange="chargerStats()"></select></div>
+        <div id="wrapDrogue" style="display:none"><label class="l">Drogue</label><select id="selDrogue" onchange="chargerStats()"></select></div>
+        <div><label class="l">Portée</label><select id="selPortee" onchange="onPorteeChange()">
+          <option value="groupe">Tout le groupe</option>
+          <option value="membre">Par membre</option>
+        </select></div>
+        <div id="wrapMembre" style="display:none"><label class="l">Membre</label><select id="selMembre" onchange="chargerStats()"></select></div>
+      </div>
+    </div>
+
+    <div class="grid cols-3 mt16">
+      <div class="card"><h3>Actions — total</h3><div class="stat-num" id="totalActions">0</div></div>
+      <div class="card"><h3>Gains totaux</h3><div class="stat-num gold" id="totalGains">0 $</div></div>
+      <div class="card"><h3>Taux de réussite</h3><div class="stat-num" id="tauxReussite">0%</div></div>
+    </div>
+
+    <div class="panel mt24" id="panelClassement">
+      <div class="panel-head"><h2>Classement membres</h2></div>
+      <table><thead><tr><th>#</th><th>Membre</th><th>Actions</th><th>Réussites</th><th>Gains générés</th></tr></thead>
+        <tbody id="tblClassement"><tr class="empty-row"><td colspan="5">Chargement…</td></tr></tbody></table>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>Détail par semaine</h2></div>
+      <table><thead><tr><th>Semaine</th><th>Actions</th><th>Gains sale</th><th>Gains propre</th></tr></thead>
+        <tbody id="tblSemaines"><tr class="empty-row"><td colspan="4">Chargement…</td></tr></tbody></table>
+    </div>
+  `;
+}
+
+function onTypeChange() {
+  const t = document.getElementById("selType").value;
+  document.getElementById("wrapAction").style.display = t === "action" ? "" : "none";
+  document.getElementById("wrapDrogue").style.display = t === "drogue" ? "" : "none";
+  chargerStats();
+}
+
+function onPorteeChange() {
+  const p = document.getElementById("selPortee").value;
+  document.getElementById("wrapMembre").style.display = p === "membre" ? "" : "none";
+  chargerStats();
+}
+
+async function init() {
+  const [snapM, snapAD, snapSem, snapAct, snapStock] = await Promise.all([
+    db.ref("membres").once("value"),
+    db.ref("actions_dispo").once("value"),
+    db.ref("semaines").once("value"),
+    db.ref("actions").once("value"),
+    db.ref("stock").once("value")
+  ]);
+  MEMBRES = entries(snapM.val()).map(([id, m]) => ({ id, ...m })).filter(m => m.actif !== false);
+  ACTIONS_DISPO = snapAD.val() || {};
+  SEMAINES = entries(snapSem.val()).map(([id, s]) => ({ id, ...s }));
+  const actionsParSemaine = snapAct.val() || {};
+  ACTIONS_ALL = [];
+  SEMAINES.forEach(s => { ACTIONS_ALL = ACTIONS_ALL.concat(entries(actionsParSemaine[s.id]).map(([id, a]) => ({ ...a, semaineId: s.id }))); });
+
+  const stock = snapStock.val() || {};
+  const catDrogue = entries(stock).find(([, cat]) => (cat.nom || "").toLowerCase() === "drogue");
+  PRODUITS_DROGUE = catDrogue ? entries(catDrogue[1].produits).map(([, p]) => p.nom) : [];
+
+  const actionsClassiques = entries(ACTIONS_DISPO).filter(([, a]) => !a.cat_variable);
+  document.getElementById("selAction").innerHTML = actionsClassiques.length
+    ? actionsClassiques.map(([id, a]) => `<option value="${id}">${a.nom}</option>`).join("")
+    : '<option value="">Aucune action</option>';
+
+  document.getElementById("selDrogue").innerHTML = `<option value="">Toutes les drogues</option>`
+    + PRODUITS_DROGUE.map(nom => `<option value="${nom}">${nom}</option>`).join("");
+
+  document.getElementById("selMembre").innerHTML = MEMBRES.map(m => `<option value="${m.id}">${m.prenom} ${m.nom || ""}</option>`).join("");
+
+  chargerStats();
+}
+
+function chargerStats() {
+  const type = document.getElementById("selType").value;
+  const portee = document.getElementById("selPortee").value;
+  const actionId = document.getElementById("selAction").value;
+  const drogueNom = document.getElementById("selDrogue").value;
+  const membreId = document.getElementById("selMembre").value;
+
+  let base = ACTIONS_ALL;
+  if (type === "action") base = base.filter(a => a.action_id === actionId);
+  else if (type === "drogue") base = drogueNom ? base.filter(a => a.produit_drogue === drogueNom) : base.filter(a => a.produit_drogue_id);
+
+  if (portee === "membre") base = base.filter(a => a.membre_id === membreId);
+
+  document.getElementById("totalActions").textContent = base.length;
+  const gains = base.reduce((acc, a) => acc + Number(a.gains_totaux || 0), 0);
+  document.getElementById("totalGains").textContent = formatMoney(gains);
+  const reussites = base.filter(a => a.resultat === "Réussite").length;
+  document.getElementById("tauxReussite").textContent = base.length ? Math.round(reussites / base.length * 100) + "%" : "0%";
+
+  document.getElementById("panelClassement").style.display = portee === "groupe" ? "" : "none";
+  if (portee === "groupe") {
+    const parMembre = {};
+    base.forEach(a => {
+      const key = a.prenom_membre || "?";
+      if (!parMembre[key]) parMembre[key] = { actions: 0, reussites: 0, gains: 0 };
+      parMembre[key].actions++;
+      if (a.resultat === "Réussite") parMembre[key].reussites++;
+      parMembre[key].gains += Number(a.gains_totaux || 0);
+    });
+    const classement = Object.entries(parMembre).sort((a, b) => b[1].gains - a[1].gains);
+    document.getElementById("tblClassement").innerHTML = classement.length ? classement.map(([nom, d], i) => `
+      <tr><td>${i + 1}</td><td>${nom}</td><td>${d.actions}</td><td>${d.reussites}</td><td>${formatMoney(d.gains)}</td></tr>
+    `).join("") : '<tr class="empty-row"><td colspan="5">Aucune donnée</td></tr>';
+  }
+
+  const lignesSemaines = SEMAINES.slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).map(s => {
+    const acts = base.filter(a => a.semaineId === s.id);
+    const gSale = acts.reduce((acc, a) => acc + Number(a.argent_sale || 0), 0);
+    const gPropre = acts.reduce((acc, a) => acc + Number(a.argent_propre || 0), 0);
+    return `<tr><td>${s.nom}</td><td>${acts.length}</td><td>${formatMoney(gSale)}</td><td>${formatMoney(gPropre)}</td></tr>`;
+  });
+  document.getElementById("tblSemaines").innerHTML = lignesSemaines.length ? lignesSemaines.join("") : '<tr class="empty-row"><td colspan="4">Aucune semaine</td></tr>';
+}
+
+(async function () {
+  SESSION = await initShell("stats", "Stats");
+  if (!SESSION) return;
+  renderContent();
+  await init();
+})();
+</script>
+</body>
+</html>
