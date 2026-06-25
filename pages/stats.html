@@ -45,6 +45,17 @@ function renderContent() {
       <div class="card"><h3>Taux de réussite</h3><div class="stat-num" id="tauxReussite">0%</div></div>
     </div>
 
+    <div class="grid cols-2 mt24">
+      <div class="panel">
+        <div class="panel-head"><h2>Répartition par action</h2></div>
+        <div id="listeRepartitionActions" class="small">Chargement…</div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Répartition par drogue</h2></div>
+        <div id="listeRepartitionDrogue" class="small">Chargement…</div>
+      </div>
+    </div>
+
     <div class="panel mt24" id="panelClassement">
       <div class="panel-head"><h2>Classement membres</h2></div>
       <table><thead><tr><th>#</th><th>Membre</th><th>Actions</th><th>Réussites</th><th>Gains générés</th></tr></thead>
@@ -146,6 +157,18 @@ function chargerStats() {
     return `<tr><td>${s.nom}</td><td>${acts.length}</td><td>${formatMoney(gSale)}</td><td>${formatMoney(gPropre)}</td></tr>`;
   });
   document.getElementById("tblSemaines").innerHTML = lignesSemaines.length ? lignesSemaines.join("") : '<tr class="empty-row"><td colspan="4">Aucune semaine</td></tr>';
+
+  const baseRepartition = portee === "membre" ? ACTIONS_ALL.filter(a => a.membre_id === membreId) : ACTIONS_ALL;
+  const actionsClassiques = entries(ACTIONS_DISPO).filter(([, a]) => !a.cat_variable);
+  document.getElementById("listeRepartitionActions").innerHTML = actionsClassiques.length ? actionsClassiques.map(([id, a]) => {
+    const total = baseRepartition.filter(x => x.action_id === id && x.resultat === "Réussite").reduce((acc, x) => acc + Number(x.quantite || 0), 0);
+    return `<div>Total ${a.nom} = <strong>${total}</strong></div>`;
+  }).join("") : "Aucune action";
+
+  document.getElementById("listeRepartitionDrogue").innerHTML = PRODUITS_DROGUE.length ? PRODUITS_DROGUE.map(nom => {
+    const total = baseRepartition.filter(x => x.produit_drogue === nom && x.resultat === "Réussite").reduce((acc, x) => acc + Number(x.quantite || 0), 0);
+    return `<div>Total ${nom} = <strong>${total}</strong></div>`;
+  }).join("") : "Aucune drogue";
 }
 
 (async function () {
