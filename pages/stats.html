@@ -40,7 +40,7 @@ function renderContent() {
     </div>
 
     <div class="grid cols-3 mt16">
-      <div class="card"><h3>Actions — total</h3><div class="stat-num" id="totalActions">0</div></div>
+      <div class="card" id="cardActions"><h3>Actions — total</h3><div class="stat-num" id="totalActions">0</div></div>
       <div class="card"><h3>Gains totaux</h3><div class="stat-num gold" id="totalGains">0 $</div></div>
       <div class="card"><h3>Taux de réussite</h3><div class="stat-num" id="tauxReussite">0%</div></div>
     </div>
@@ -128,8 +128,9 @@ function chargerStats() {
 
   if (portee === "membre") base = base.filter(a => a.membre_id === membreId);
 
+  document.getElementById("cardActions").style.display = type === "drogue" ? "none" : "";
   document.getElementById("panelRepartitionActions").style.display = type === "drogue" ? "none" : "";
-  document.getElementById("totalActions").textContent = type === "drogue" ? 0 : base.length;
+  document.getElementById("totalActions").textContent = base.length;
   const gains = base.reduce((acc, a) => acc + Number(a.gains_totaux || 0), 0);
   document.getElementById("totalGains").textContent = formatMoney(gains);
   const reussites = base.filter(a => a.resultat === "Réussite").length;
