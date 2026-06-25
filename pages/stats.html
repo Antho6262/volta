@@ -42,7 +42,7 @@ function renderContent() {
     <div class="grid cols-3 mt16">
       <div class="card" id="cardActions"><h3>Actions — total</h3><div class="stat-num" id="totalActions">0</div></div>
       <div class="card"><h3>Gains totaux</h3><div class="stat-num gold" id="totalGains">0 $</div></div>
-      <div class="card"><h3>Taux de réussite</h3><div class="stat-num" id="tauxReussite">0%</div></div>
+      <div class="card" id="cardQuantiteDrogue" style="display:none"><h3>Quantité vendue</h3><div class="stat-num gold" id="quantiteDrogue">—</div></div>
     </div>
 
     <div class="grid cols-2 mt24">
@@ -133,8 +133,12 @@ function chargerStats() {
   document.getElementById("totalActions").textContent = base.length;
   const gains = base.reduce((acc, a) => acc + Number(a.gains_totaux || 0), 0);
   document.getElementById("totalGains").textContent = formatMoney(gains);
-  const reussites = base.filter(a => a.resultat === "Réussite").length;
-  document.getElementById("tauxReussite").textContent = base.length ? Math.round(reussites / base.length * 100) + "%" : "0%";
+
+  document.getElementById("cardQuantiteDrogue").style.display = type === "drogue" ? "" : "none";
+  if (type === "drogue") {
+    const qteVendue = base.filter(a => a.resultat === "Réussite").reduce((acc, a) => acc + Number(a.quantite || 0), 0);
+    document.getElementById("quantiteDrogue").textContent = `${drogueNom || "Toutes les drogues"} x ${qteVendue}`;
+  }
 
   document.getElementById("panelClassement").style.display = portee === "groupe" ? "" : "none";
   if (portee === "groupe") {
