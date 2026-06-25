@@ -29,7 +29,7 @@ function renderContent() {
       <div class="card"><h3>Solde sale</h3><div class="stat-num" id="soldeSale">0 $</div><div class="stat-sub">argent non blanchi</div></div>
       <div class="card"><h3>Solde propre</h3><div class="stat-num gold" id="soldePropre">0 $</div><div class="stat-sub">argent blanchi</div></div>
       <div class="card"><h3>Actions — semaine</h3><div class="stat-num" id="nbActions">0</div><div class="stat-sub" id="nbReussites">0 réussites</div></div>
-      <div class="card"><h3>Gains totaux — semaine</h3><div class="stat-num gold" id="gainsTotaux">0 $</div><div class="stat-sub">sale + propre</div></div>
+      <div class="card"><h3>Gain Total Vente de Drogue</h3><div class="stat-num gold" id="gainsTotaux">0 $</div><div class="stat-sub">cette semaine</div></div>
     </div>
 
     <div class="grid cols-2 mt24">
@@ -85,7 +85,7 @@ function renderDerived() {
   lastActionCount = actions.length;
 
   const reussites = actions.filter(a => a.resultat === "Réussite").length;
-  const gains = actions.reduce((acc, a) => acc + Number(a.gains_totaux || 0), 0);
+  const gains = actions.filter(a => a.produit_drogue_id).reduce((acc, a) => acc + Number(a.gains_totaux || 0), 0);
   document.getElementById("nbActions").textContent = actions.length;
   document.getElementById("nbReussites").textContent = reussites + " réussites";
   document.getElementById("gainsTotaux").textContent = formatMoney(gains);
