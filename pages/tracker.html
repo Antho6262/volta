@@ -59,6 +59,7 @@ function renderContent() {
           <select id="filtMembre" onchange="renderTable()"><option value="">Tous les membres</option></select>
           <select id="filtAction" onchange="renderTable()"><option value="">Toutes les actions</option></select>
           <select id="filtResultat" onchange="renderTable()"><option value="">Tous résultats</option><option>Réussite</option><option>Échec</option></select>
+          <select id="filtLimite" onchange="renderTable()"><option value="10">Afficher 10</option><option value="30">Afficher 30</option><option value="50">Afficher 50</option><option value="9999">Tout afficher</option></select>
         </div>
       </div>
       <table>
@@ -203,9 +204,10 @@ async function renderTable() {
   const fm = document.getElementById("filtMembre").value;
   const fa = document.getElementById("filtAction").value;
   const fr = document.getElementById("filtResultat").value;
+  const limite = Number(document.getElementById("filtLimite").value) || 10;
   const rows = ALL_ACTIONS.filter(a =>
     (!fm || a.membre_id === fm) && (!fa || a.action_id === fa) && (!fr || a.resultat === fr)
-  );
+  ).slice(0, limite);
 
   const canDelete = SESSION.role === "admin";
   document.getElementById("tblActions").innerHTML = rows.length ? rows.map(a => `
