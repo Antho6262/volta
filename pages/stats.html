@@ -58,7 +58,7 @@ function renderContent() {
 
     <div class="panel mt24" id="panelClassement">
       <div class="panel-head"><h2>Classement membres</h2></div>
-      <table><thead><tr><th>#</th><th>Membre</th><th>Actions</th><th>Réussites</th><th>Gains générés</th></tr></thead>
+      <table><thead><tr id="theadClassement"><th>#</th><th>Membre</th><th>Actions</th><th>Réussites</th><th>Gains générés</th></tr></thead>
         <tbody id="tblClassement"><tr class="empty-row"><td colspan="5">Chargement…</td></tr></tbody></table>
     </div>
 
@@ -145,15 +145,19 @@ function chargerStats() {
     const parMembre = {};
     base.forEach(a => {
       const key = a.prenom_membre || "?";
-      if (!parMembre[key]) parMembre[key] = { actions: 0, reussites: 0, gains: 0 };
+      if (!parMembre[key]) parMembre[key] = { actions: 0, reussites: 0, gains: 0, qte: 0 };
       parMembre[key].actions++;
-      if (a.resultat === "Réussite") parMembre[key].reussites++;
+      if (a.resultat === "Réussite") { parMembre[key].reussites++; parMembre[key].qte += Number(a.quantite || 0); }
       parMembre[key].gains += Number(a.gains_totaux || 0);
     });
     const classement = Object.entries(parMembre).sort((a, b) => b[1].gains - a[1].gains);
-    document.getElementById("tblClassement").innerHTML = classement.length ? classement.map(([nom, d], i) => `
-      <tr><td>${i + 1}</td><td>${nom}</td><td>${d.actions}</td><td>${d.reussites}</td><td>${formatMoney(d.gains)}</td></tr>
-    `).join("") : '<tr class="empty-row"><td colspan="5">Aucune donnée</td></tr>';
+    document.getElementById("theadClassement").innerHTML = type === "drogue"
+      ? `<th>#</th><th>Membre</th><th>Quantité vendue</th><th>Gains générés</th>`
+      : `<th>#</th><th>Membre</th><th>Actions</th><th>Réussites</th><th>Gains générés</th>`;
+    document.getElementById("tblClassement").innerHTML = classement.length ? classement.map(([nom, d], i) => type === "drogue"
+      ? `<tr><td>${i + 1}</td><td>${nom}</td><td>${drogueNom || "Toutes les drogues"} x ${d.qte}</td><td>${formatMoney(d.gains)}</td></tr>`
+      : `<tr><td>${i + 1}</td><td>${nom}</td><td>${d.actions}</td><td>${d.reussites}</td><td>${formatMoney(d.gains)}</td></tr>`
+    ).join("") : `<tr class="empty-row"><td colspan="${type === "drogue" ? 4 : 5}">Aucune donnée</td></tr>`;
   }
 
   const lignesSemaines = SEMAINES.slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).map(s => {
