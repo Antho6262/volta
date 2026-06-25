@@ -46,7 +46,7 @@ function renderContent() {
     </div>
 
     <div class="grid cols-2 mt24">
-      <div class="panel">
+      <div class="panel" id="panelRepartitionActions">
         <div class="panel-head"><h2>Répartition par action</h2></div>
         <div id="listeRepartitionActions" class="small">Chargement…</div>
       </div>
@@ -128,7 +128,8 @@ function chargerStats() {
 
   if (portee === "membre") base = base.filter(a => a.membre_id === membreId);
 
-  document.getElementById("totalActions").textContent = base.length;
+  document.getElementById("panelRepartitionActions").style.display = type === "drogue" ? "none" : "";
+  document.getElementById("totalActions").textContent = type === "drogue" ? 0 : base.length;
   const gains = base.reduce((acc, a) => acc + Number(a.gains_totaux || 0), 0);
   document.getElementById("totalGains").textContent = formatMoney(gains);
   const reussites = base.filter(a => a.resultat === "Réussite").length;
