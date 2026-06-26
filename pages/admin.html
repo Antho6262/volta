@@ -129,10 +129,23 @@ async function bloquerSemaine(id, nom) {
 
 /* ===================== MEMBRES ===================== */
 async function tabMembres(body) {
-  const [snapM, snapG] = await Promise.all([db.ref("membres").once("value"), db.ref("grades").once("value")]);
+  const [snapM, snapG, snapR] = await Promise.all([db.ref("membres").once("value"), db.ref("grades").once("value"), db.ref("reset_requests").once("value")]);
   const membres = entries(snapM.val()).map(([id, m]) => ({ id, ...m }));
   const grades = entries(snapG.val()).map(([id, g]) => g.nom);
+  const demandes = entries(snapR.val()).map(([id, r]) => ({ id, ...r }));
   body.innerHTML = `
+    ${demandes.length ? `
+    <div class="panel">
+      <div class="panel-head"><h2>🔔 Demandes de mot de passe oublié (${demandes.length})</h2></div>
+      <table><thead><tr><th>Membre</th><th>Date</th><th></th></tr></thead>
+        <tbody>${demandes.map(r => `
+          <tr><td>${r.prenom} ${r.nom || ""}</td><td class="small muted">${r.date || ""}</td>
+          <td style="white-space:nowrap;">
+            <span class="btn btn-sm btn-gold" onclick="changerPassMembre('${r.membre_id}','${r.prenom}','${r.id}')">🔑 Réinitialiser</span>
+            <span class="btn btn-sm" onclick="ignorerDemande('${r.id}')">Ignorer</span>
+          </td></tr>
+        `).join("")}</tbody></table>
+    </div>` : ""}
     <div class="panel">
       <div class="panel-head"><h2>Ajouter un membre</h2></div>
       <div class="row">
@@ -181,12 +194,18 @@ async function modifierMembre(id) {
   toast("Membre mis à jour.");
   loadTab("membres");
 }
-async function changerPassMembre(id, prenom) {
+async function changerPassMembre(id, prenom, requestId) {
   const val = window.prompt("Nouveau mot de passe pour " + prenom + " :");
   if (val === null) return;
   if (val.trim().length < 4) { toast("Mot de passe trop court.", true); return; }
   await db.ref("membres/" + id + "/mot_de_passe").set(val.trim());
+  if (requestId) await db.ref("reset_requests/" + requestId).remove();
   toast("Mot de passe mis à jour.");
+  if (requestId) loadTab("membres");
+}
+async function ignorerDemande(reqId) {
+  await db.ref("reset_requests/" + reqId).remove();
+  loadTab("membres");
 }
 async function toggleAdmin(id, makeAdmin) {
   if (!confirm(makeAdmin ? "Donner le rôle admin à ce membre ?" : "Retirer le rôle admin à ce membre ?")) return;

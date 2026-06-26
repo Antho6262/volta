@@ -25,6 +25,12 @@
     </div>
     <button class="btn btn-primary" onclick="doLogin()">Se connecter</button>
     <div class="login-error" id="errMsg"></div>
+    <div class="login-foot"><a href="#" onclick="toggleOublie(event)" style="color:var(--gold)">Mot de passe oublié ?</a></div>
+    <div id="oublieWrap" style="display:none;margin-top:10px;">
+      <p class="small muted">Une demande sera envoyée à un admin, qui réinitialisera ton mot de passe.</p>
+      <button class="btn btn-gold" style="width:100%;" onclick="envoyerDemandeOubli()">Envoyer la demande</button>
+      <div class="small" id="oublieMsg" style="margin-top:6px;"></div>
+    </div>
     <div class="login-foot">Première installation ? <a href="setup.html" style="color:var(--gold)">Initialiser le site</a></div>
   </div>
 </div>
@@ -71,6 +77,23 @@ function doLogin() {
   }
   setSession({ id, prenom: m.prenom, nom: m.nom || "", grade: m.grade, role: m.role || "membre" });
   window.location.href = "pages/dashboard.html";
+}
+
+function toggleOublie(e) {
+  e.preventDefault();
+  const wrap = document.getElementById("oublieWrap");
+  wrap.style.display = wrap.style.display === "none" ? "block" : "none";
+}
+
+async function envoyerDemandeOubli() {
+  const id = document.getElementById("selMembre").value;
+  const msg = document.getElementById("oublieMsg");
+  if (!id) { msg.textContent = "Sélectionne d'abord ton membre dans la liste ci-dessus."; return; }
+  const m = MEMBRES[id];
+  await db.ref("reset_requests/" + id).set({
+    membre_id: id, prenom: m.prenom, nom: m.nom || "", date: new Date().toISOString().slice(0, 10), createdAt: Date.now()
+  });
+  msg.textContent = "Demande envoyée. Un admin va réinitialiser ton mot de passe.";
 }
 
 document.getElementById("inpPass").addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); });
