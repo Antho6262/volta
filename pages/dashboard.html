@@ -84,7 +84,7 @@ function renderDerived() {
   if (lastActionCount !== null && actions.length > lastActionCount) toast("Nouvelle action enregistrée");
   lastActionCount = actions.length;
 
-  const actionsClassiques = actions.filter(a => !a.produit_drogue_id);
+  const actionsClassiques = actions.filter(a => !a.produit_drogue_id && a.action !== "Armurerie" && a.action !== "Fleeca");
   const reussites = actionsClassiques.filter(a => a.resultat === "Réussite").length;
   const gains = actions.filter(a => a.produit_drogue_id).reduce((acc, a) => acc + Number(a.gains_totaux || 0), 0);
   document.getElementById("nbActions").textContent = actionsClassiques.length;
