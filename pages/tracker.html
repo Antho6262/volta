@@ -41,7 +41,7 @@ function renderContent() {
       </div>
       <div class="row mt8" id="equipeWrap" style="display:none;">
         <div style="width:100%;">
-          <label class="l">Membres participants (en plus du membre principal — total minimum 3 personnes)</label>
+          <label class="l">Membres participants (en plus du membre principal — autant que vous voulez)</label>
           <div id="equipeCheckboxes" class="row" style="flex-wrap:wrap;gap:10px;"></div>
         </div>
       </div>
@@ -185,7 +185,6 @@ async function ajouterAction() {
   let participantsIds = [];
   if (act.nom === "Armurerie" || act.nom === "Fleeca") {
     participantsIds = Array.from(document.querySelectorAll(".chkEquipe:checked")).map(c => c.value);
-    if (1 + participantsIds.length < 3) { toast("Minimum 3 personnes requises pour " + act.nom + ".", true); return; }
   }
 
   const entry = {
