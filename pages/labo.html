@@ -48,11 +48,18 @@ function renderContent() {
     ${SESSION.role === "admin" ? `
     <div class="panel mt16">
       <div class="panel-head"><h2>Produits Labo (catalogue)</h2></div>
+      <p class="small muted">Un produit sans recette est un ingrédient brut (ajouté directement au stock perso). Un produit avec recette consomme les ingrédients de la recette (× quantité) dans le stock perso du membre pour produire le résultat.</p>
       <div class="row">
-        <input type="text" id="nouveauProduit" placeholder="Nom du produit (ex: Meth Bleue)">
-        <button class="btn btn-gold" onclick="ajouterProduit()">Ajouter</button>
+        <div><label class="l">Nom du produit</label><input type="text" id="nouveauProduit" placeholder="ex: Champignon rouge, Black Trip..."></div>
       </div>
-      <div id="listeProduitsAdmin" class="small mt8">Chargement…</div>
+      <div class="row mt8">
+        <div><label class="l">Ingrédient (optionnel, pour une recette)</label><select id="recetteIngredient"></select></div>
+        <div><label class="l">Qté nécessaire</label><input type="number" id="recetteQte" value="1" min="1"></div>
+        <div style="display:flex;align-items:flex-end;"><button class="btn" onclick="ajouterLigneRecette()">Ajouter à la recette</button></div>
+      </div>
+      <div id="recetteEnCours" class="small muted mt8">Aucune ligne de recette en cours.</div>
+      <button class="btn btn-gold mt8" onclick="ajouterProduit()">Enregistrer le produit</button>
+      <div id="listeProduitsAdmin" class="small mt16">Chargement…</div>
     </div>` : ""}
 
     <div class="panel mt16">
@@ -101,11 +108,23 @@ function toggleRaison() {
   document.getElementById("raisonWrap").style.display = document.getElementById("fResultat").value === "Échec" ? "block" : "none";
 }
 
+let RECETTE_EN_COURS = [];
+
+function ajouterLigneRecette() {
+  const pid = document.getElementById("recetteIngredient").value;
+  const qte = Number(document.getElementById("recetteQte").value) || 0;
+  if (!pid || qte <= 0) { toast("Choisis un ingrédient et une quantité.", true); return; }
+  RECETTE_EN_COURS.push({ ingredientId: pid, qty: qte });
+  document.getElementById("recetteEnCours").innerHTML = "Recette en cours : " + RECETTE_EN_COURS.map(l => `${l.qty}x ${(LABO_PRODUITS[l.ingredientId] || {}).nom || "?"}`).join(", ");
+}
+
 async function ajouterProduit() {
   const nom = document.getElementById("nouveauProduit").value.trim();
   if (!nom) { toast("Nom requis.", true); return; }
-  await db.ref("stock/labo_cat/produits/" + uid()).set({ nom, prix: 0, stock: 0, seuil: 0 });
+  await db.ref("stock/labo_cat/produits/" + uid()).set({ nom, prix: 0, stock: 0, seuil: 0, recipe: RECETTE_EN_COURS });
   document.getElementById("nouveauProduit").value = "";
+  RECETTE_EN_COURS = [];
+  document.getElementById("recetteEnCours").textContent = "Aucune ligne de recette en cours.";
   await chargerListes();
 }
 
@@ -138,6 +157,13 @@ async function ajouterProduction() {
   await db.ref("actions/" + ACTIVE_WEEK.id + "/" + uid()).set(entry);
 
   if (resultat === "Réussite") {
+    const recipe = prod.recipe || [];
+    for (const ligne of recipe) {
+      const refIng = db.ref(`labo_stock/${membreId}/${ligne.ingredientId}`);
+      const snapIng = await refIng.once("value");
+      const currentIng = Number(snapIng.val()) || 0;
+      await refIng.set(Math.max(0, currentIng - ligne.qty * qte));
+    }
     const ref = db.ref(`labo_stock/${membreId}/${pid}`);
     const snap = await ref.once("value");
     const current = Number(snap.val()) || 0;
@@ -171,12 +197,19 @@ async function afficherStock() {
 }
 
 async function supprimerProduction(semaineId, id, membreId, pid, qte, resultat) {
-  if (!confirm("Supprimer cette production ?")) return;
+  if (!confirm("Supprimer cette production ? Les ingrédients consommés seront restitués.")) return;
   if (resultat === "Réussite") {
     const ref = db.ref(`labo_stock/${membreId}/${pid}`);
     const snap = await ref.once("value");
     const current = Number(snap.val()) || 0;
     await ref.set(Math.max(0, current - qte));
+    const recipe = (LABO_PRODUITS[pid] || {}).recipe || [];
+    for (const ligne of recipe) {
+      const refIng = db.ref(`labo_stock/${membreId}/${ligne.ingredientId}`);
+      const snapIng = await refIng.once("value");
+      const currentIng = Number(snapIng.val()) || 0;
+      await refIng.set(currentIng + ligne.qty * qte);
+    }
   }
   await db.ref("actions/" + semaineId + "/" + id).remove();
   toast("Production supprimée.");
@@ -226,8 +259,16 @@ async function chargerListes() {
     : '<option value="">Aucun produit — ajoute-en un ci-dessus</option>';
 
   if (SESSION.role === "admin") {
+    const selIng = document.getElementById("recetteIngredient");
+    selIng.innerHTML = prodEntries.length
+      ? prodEntries.map(([pid, p]) => `<option value="${pid}">${p.nom}</option>`).join("")
+      : '<option value="">Aucun produit existant</option>';
+
     document.getElementById("listeProduitsAdmin").innerHTML = prodEntries.length
-      ? prodEntries.map(([pid, p]) => `<div>${p.nom} <span class="btn btn-sm btn-danger" onclick="supprimerProduit('${pid}')">Suppr.</span></div>`).join("")
+      ? prodEntries.map(([pid, p]) => {
+          const recette = (p.recipe || []).map(l => `${l.qty}x ${(LABO_PRODUITS[l.ingredientId] || {}).nom || "?"}`).join(", ");
+          return `<div>${p.nom}${recette ? ` <span class="muted">← ${recette}</span>` : ""} <span class="btn btn-sm btn-danger" onclick="supprimerProduit('${pid}')">Suppr.</span></div>`;
+        }).join("")
       : "Aucun produit configuré.";
   }
 
