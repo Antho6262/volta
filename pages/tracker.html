@@ -14,7 +14,7 @@
 <script src="../js/firebase-config.js"></script>
 <script src="../js/app.js"></script>
 <script>
-let SESSION, ACTIVE_WEEK = null, MEMBRES = {}, ACTIONS_DISPO = {}, STOCK = {};
+let SESSION, ACTIVE_WEEK = null, MEMBRES = {}, ACTIONS_DISPO = {}, STOCK = {}, GRADES_MASQUES = new Set();
 
 async function getActiveWeek() {
   const snap = await db.ref("semaines").once("value");
@@ -108,7 +108,7 @@ function renderEquipeCheckboxes() {
   if (!estActionEquipe()) return;
   const mainId = document.getElementById("fMembre").value;
   const box = document.getElementById("equipeCheckboxes");
-  box.innerHTML = entries(MEMBRES).filter(([id, m]) => m.actif !== false && id !== mainId).map(([id, m]) =>
+  box.innerHTML = entries(MEMBRES).filter(([id, m]) => m.actif !== false && id !== mainId && !GRADES_MASQUES.has(m.grade)).map(([id, m]) =>
     `<label style="display:flex;align-items:center;gap:4px;"><input type="checkbox" value="${id}" class="chkEquipe"> ${m.prenom}</label>`
   ).join("");
 }
@@ -123,16 +123,18 @@ function autoFillMontants() {
 }
 
 async function chargerListes() {
-  const [snapM, snapA, snapS] = await Promise.all([
-    db.ref("membres").once("value"), db.ref("actions_dispo").once("value"), db.ref("stock").once("value")
+  const [snapM, snapA, snapS, snapG] = await Promise.all([
+    db.ref("membres").once("value"), db.ref("actions_dispo").once("value"), db.ref("stock").once("value"), db.ref("grades").once("value")
   ]);
   MEMBRES = snapM.val() || {};
   ACTIONS_DISPO = snapA.val() || {};
   STOCK = snapS.val() || {};
+  const gradesMasques = new Set(entries(snapG.val()).filter(([, g]) => g.suivi === false).map(([, g]) => g.nom));
+  GRADES_MASQUES = gradesMasques;
 
   const selM = document.getElementById("fMembre"), filtM = document.getElementById("filtMembre");
   entries(MEMBRES).forEach(([id, m]) => {
-    if (m.actif === false) return;
+    if (m.actif === false || gradesMasques.has(m.grade)) return;
     const label = m.prenom + (m.nom ? " " + m.nom : "");
     selM.appendChild(new Option(label, id, id === SESSION.id, id === SESSION.id));
     filtM.appendChild(new Option(label, id));

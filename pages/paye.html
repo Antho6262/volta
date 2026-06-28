@@ -59,15 +59,17 @@ async function chargerPaye() {
   const debut = SEMAINE_SEL.createdAt || 0;
   const fin = SEMAINE_SEL.closedAt || Date.now();
 
-  const [snapM, snapA, snapAD, snapP, snapSale, snapPropre] = await Promise.all([
+  const [snapM, snapA, snapAD, snapP, snapSale, snapPropre, snapG] = await Promise.all([
     db.ref("membres").once("value"),
     db.ref("actions/" + SEMAINE_SEL.id).once("value"),
     db.ref("actions_dispo").once("value"),
     db.ref("payes/" + SEMAINE_SEL.id).once("value"),
     db.ref("argent/sale").once("value"),
-    db.ref("argent/propre").once("value")
+    db.ref("argent/propre").once("value"),
+    db.ref("grades").once("value")
   ]);
-  const membres = entries(snapM.val()).map(([id, m]) => ({ id, ...m })).filter(m => m.actif !== false);
+  const gradesMasques = new Set(entries(snapG.val()).filter(([, g]) => g.suivi === false).map(([, g]) => g.nom));
+  const membres = entries(snapM.val()).map(([id, m]) => ({ id, ...m })).filter(m => m.actif !== false && !gradesMasques.has(m.grade));
   const actions = entries(snapA.val()).map(([id, a]) => a);
   const actionsDispo = snapAD.val() || {};
   const payes = snapP.val() || {};

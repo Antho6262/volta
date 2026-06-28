@@ -14,7 +14,7 @@
 <script src="../js/firebase-config.js"></script>
 <script src="../js/app.js"></script>
 <script>
-let SESSION, ACTIVE_WEEK = null, MEMBRES = {}, LABO_ACTION_ID = null, LABO_PRODUITS = {}, LABO_STOCK = {}, LABO_STOCK_COMMUN = {};
+let SESSION, ACTIVE_WEEK = null, MEMBRES = {}, LABO_ACTION_ID = null, LABO_PRODUITS = {}, LABO_STOCK = {}, LABO_STOCK_COMMUN = {}, GRADES_MASQUES = new Set();
 
 async function getActiveWeek() {
   const snap = await db.ref("semaines").once("value");
@@ -203,7 +203,7 @@ async function afficherStock() {
       ${produitsIds.map(pid => `<tr><td>${LABO_PRODUITS[pid].nom}</td><td>${Number(stockMembre[pid]) || 0}</td></tr>`).join("")}
     </tbody></table>`;
   } else {
-    const membresActifs = entries(MEMBRES).filter(([, m]) => m.actif !== false);
+    const membresActifs = entries(MEMBRES).filter(([, m]) => m.actif !== false && !GRADES_MASQUES.has(m.grade));
     zone.innerHTML = `<table><thead><tr><th>Membre</th>${produitsIds.map(pid => `<th>${LABO_PRODUITS[pid].nom}</th>`).join("")}</tr></thead><tbody>
       ${membresActifs.map(([id, m]) => `<tr><td>${m.prenom}</td>${produitsIds.map(pid => `<td>${Number((LABO_STOCK[id] || {})[pid]) || 0}</td>`).join("")}</tr>`).join("")}
     </tbody></table>`;
@@ -249,13 +249,15 @@ function renderHistorique() {
 let HISTORIQUE = [];
 
 async function chargerListes() {
-  const [snapM, snapStock, snapLaboStock, snapLaboCommun] = await Promise.all([
-    db.ref("membres").once("value"), db.ref("stock/labo_cat").once("value"), db.ref("labo_stock").once("value"), db.ref("labo_stock_commun").once("value")
+  const [snapM, snapStock, snapLaboStock, snapLaboCommun, snapG] = await Promise.all([
+    db.ref("membres").once("value"), db.ref("stock/labo_cat").once("value"), db.ref("labo_stock").once("value"), db.ref("labo_stock_commun").once("value"), db.ref("grades").once("value")
   ]);
   MEMBRES = snapM.val() || {};
   LABO_PRODUITS = (snapStock.val() || {}).produits || {};
   LABO_STOCK = snapLaboStock.val() || {};
   LABO_STOCK_COMMUN = snapLaboCommun.val() || {};
+  const gradesMasques = new Set(entries(snapG.val()).filter(([, g]) => g.suivi === false).map(([, g]) => g.nom));
+  GRADES_MASQUES = gradesMasques;
 
   const wrapFM = document.getElementById("wrapFMembre"), filtM = document.getElementById("filtMembre"), selStockM = document.getElementById("selStockMembre");
   filtM.innerHTML = '<option value="">Tous les membres</option>'; selStockM.innerHTML = '<option value="">Tous les membres</option>';
@@ -263,7 +265,7 @@ async function chargerListes() {
     wrapFM.innerHTML = `<label class="l">Membre</label><select id="fMembre"></select>`;
     const selM = document.getElementById("fMembre");
     entries(MEMBRES).forEach(([id, m]) => {
-      if (m.actif === false) return;
+      if (m.actif === false || gradesMasques.has(m.grade)) return;
       const label = m.prenom + (m.nom ? " " + m.nom : "");
       selM.appendChild(new Option(label, id, id === SESSION.id, id === SESSION.id));
     });
@@ -271,7 +273,7 @@ async function chargerListes() {
     wrapFM.innerHTML = `<label class="l">Membre</label><input type="text" value="${SESSION.prenom}" disabled>`;
   }
   entries(MEMBRES).forEach(([id, m]) => {
-    if (m.actif === false) return;
+    if (m.actif === false || gradesMasques.has(m.grade)) return;
     const label = m.prenom + (m.nom ? " " + m.nom : "");
     filtM.appendChild(new Option(label, id));
     selStockM.appendChild(new Option(label, id, id === SESSION.id, id === SESSION.id));
