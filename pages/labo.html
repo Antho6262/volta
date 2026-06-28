@@ -45,23 +45,6 @@ function renderContent() {
     <div class="sigil-rule"></div>
     <p class="muted small" id="weekLabel">Semaine active : —</p>
 
-    ${SESSION.role === "admin" ? `
-    <div class="panel mt16">
-      <div class="panel-head"><h2>Produits Labo (catalogue)</h2></div>
-      <p class="small muted">Un produit sans recette est un ingrédient brut (ajouté directement au stock perso). Un produit avec recette consomme les ingrédients de la recette (× quantité) dans le stock perso du membre pour produire le résultat.</p>
-      <div class="row">
-        <div><label class="l">Nom du produit</label><input type="text" id="nouveauProduit" placeholder="ex: Champignon rouge, Black Trip..."></div>
-      </div>
-      <div class="row mt8">
-        <div><label class="l">Ingrédient (optionnel, pour une recette)</label><select id="recetteIngredient"></select></div>
-        <div><label class="l">Qté nécessaire</label><input type="number" id="recetteQte" value="1" min="1"></div>
-        <div style="display:flex;align-items:flex-end;"><button class="btn" onclick="ajouterLigneRecette()">Ajouter à la recette</button></div>
-      </div>
-      <div id="recetteEnCours" class="small muted mt8">Aucune ligne de recette en cours.</div>
-      <button class="btn btn-gold mt8" onclick="ajouterProduit()">Enregistrer le produit</button>
-      <div id="listeProduitsAdmin" class="small mt16">Chargement…</div>
-    </div>` : ""}
-
     <div class="panel mt16">
       <div class="panel-head"><h2>Mes ingrédients</h2></div>
       <p class="small muted">Ajoute directement les ingrédients que tu as récupérés (ex: champignons) à ton propre stock.</p>
@@ -302,20 +285,6 @@ async function chargerListes() {
     : '<option value="">Aucun produit avec recette — configure-en un dans le catalogue</option>';
 
   afficherZoneIngredients();
-
-  if (SESSION.role === "admin") {
-    const selIng = document.getElementById("recetteIngredient");
-    selIng.innerHTML = prodEntries.length
-      ? prodEntries.map(([pid, p]) => `<option value="${pid}">${p.nom}</option>`).join("")
-      : '<option value="">Aucun produit existant</option>';
-
-    document.getElementById("listeProduitsAdmin").innerHTML = prodEntries.length
-      ? prodEntries.map(([pid, p]) => {
-          const recette = (p.recipe || []).map(l => `${l.qty}x ${(LABO_PRODUITS[l.ingredientId] || {}).nom || "?"}`).join(", ");
-          return `<div>${p.nom}${recette ? ` <span class="muted">← ${recette}</span>` : ""} <span class="btn btn-sm btn-danger" onclick="supprimerProduit('${pid}')">Suppr.</span></div>`;
-        }).join("")
-      : "Aucun produit configuré.";
-  }
 
   afficherStock();
 }
