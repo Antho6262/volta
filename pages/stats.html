@@ -120,7 +120,7 @@ function chargerStats() {
 
   let base = semaineFiltre === "toutes" ? ACTIONS_ALL : ACTIONS_ALL.filter(a => a.semaineId === semaineFiltre);
   if (type === "action") base = actionId ? base.filter(a => a.action_id === actionId) : base.filter(a => !a.produit_drogue_id);
-  else if (type === "drogue") base = drogueNom ? base.filter(a => a.produit_drogue === drogueNom) : base.filter(a => a.produit_drogue_id);
+  else if (type === "drogue") base = drogueNom ? base.filter(a => a.produit_drogue === drogueNom) : base.filter(a => a.produit_drogue_id && a.action !== "Labo");
 
   if (portee === "membre") base = base.filter(a => a.membre_id === membreId);
 

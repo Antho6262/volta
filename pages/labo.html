@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Labo — Klan Nostrad</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+<div id="shell"></div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="../js/firebase-config.js"></script>
+<script src="../js/app.js"></script>
+<script>
+let SESSION, ACTIVE_WEEK = null, MEMBRES = {}, LABO_ACTION_ID = null, LABO_PRODUITS = {}, LABO_STOCK = {};
+
+async function getActiveWeek() {
+  const snap = await db.ref("semaines").once("value");
+  const list = entries(snap.val()).map(([id, s]) => ({ id, ...s }));
+  list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  return list.find(s => s.bloquee !== true) || list[0] || null;
+}
+
+// Crée la catégorie de stock "Labo" et l'action "Labo" si elles n'existent pas encore
+async function bootstrap() {
+  const snapStock = await db.ref("stock/labo_cat").once("value");
+  if (!snapStock.val()) await db.ref("stock/labo_cat").set({ nom: "Labo", emoji: "🧪", produits: {} });
+
+  const snapActions = await db.ref("actions_dispo").once("value");
+  const actions = snapActions.val() || {};
+  const found = Object.entries(actions).find(([, a]) => a.nom === "Labo");
+  if (found) {
+    LABO_ACTION_ID = found[0];
+  } else {
+    LABO_ACTION_ID = "labo";
+    await db.ref("actions_dispo/labo").set({ nom: "Labo", montant_sale: 0, montant_propre: 0, recipe: [], cat_variable: "labo_cat" });
+  }
+}
+
+function renderContent() {
+  document.getElementById("content").innerHTML = `
+    <h1>Labo</h1>
+    <div class="sigil-rule"></div>
+    <p class="muted small" id="weekLabel">Semaine active : —</p>
+
+    ${SESSION.role === "admin" ? `
+    <div class="panel mt16">
+      <div class="panel-head"><h2>Produits Labo (catalogue)</h2></div>
+      <div class="row">
+        <input type="text" id="nouveauProduit" placeholder="Nom du produit (ex: Meth Bleue)">
+        <button class="btn btn-gold" onclick="ajouterProduit()">Ajouter</button>
+      </div>
+      <div id="listeProduitsAdmin" class="small mt8">Chargement…</div>
+    </div>` : ""}
+
+    <div class="panel mt16">
+      <div class="panel-head"><h2>Nouvelle production</h2></div>
+      <div class="row">
+        <div><label class="l">Membre</label><select id="fMembre"></select></div>
+        <div><label class="l">Produit</label><select id="fProduit"></select></div>
+        <div><label class="l">Quantité</label><input type="number" id="fQte" value="1" min="1"></div>
+      </div>
+      <div class="row mt8">
+        <div><label class="l">Résultat</label><select id="fResultat" onchange="toggleRaison()"><option>Réussite</option><option>Échec</option></select></div>
+        <div id="raisonWrap" style="display:none;"><label class="l">Raison de l'échec</label><input type="text" id="fRaison" placeholder="Optionnel"></div>
+        <div><label class="l">Date</label><input type="date" id="fDate"></div>
+        <div style="display:flex;align-items:flex-end;"><button class="btn btn-primary" style="width:100%;" onclick="ajouterProduction()">Enregistrer</button></div>
+      </div>
+      <p class="small muted mt8">Une production réussie ajoute la quantité au stock personnel du membre choisi (pas au stock commun de la faction).</p>
+    </div>
+
+    <div class="panel mt24">
+      <div class="panel-head">
+        <h2>Stock Labo — par membre</h2>
+        <select id="selStockMembre" onchange="afficherStock()"><option value="">Tous les membres</option></select>
+      </div>
+      <div id="zoneStock">Chargement…</div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Historique — ${ACTIVE_WEEK ? ACTIVE_WEEK.nom : ""}</h2>
+        <div class="row" style="max-width:420px;">
+          <select id="filtMembre" onchange="renderHistorique()"><option value="">Tous les membres</option></select>
+          <select id="filtResultat" onchange="renderHistorique()"><option value="">Tous résultats</option><option>Réussite</option><option>Échec</option></select>
+          <select id="filtLimite" onchange="renderHistorique()"><option value="10">Afficher 10</option><option value="30">Afficher 30</option><option value="9999">Tout afficher</option></select>
+        </div>
+      </div>
+      <table>
+        <thead><tr><th>Date</th><th>Membre</th><th>Produit</th><th>Qté</th><th>Résultat</th><th></th></tr></thead>
+        <tbody id="tblHistorique"><tr class="empty-row"><td colspan="6">Chargement…</td></tr></tbody>
+      </table>
+    </div>
+  `;
+  document.getElementById("fDate").value = todayISO();
+}
+
+function toggleRaison() {
+  document.getElementById("raisonWrap").style.display = document.getElementById("fResultat").value === "Échec" ? "block" : "none";
+}
+
+async function ajouterProduit() {
+  const nom = document.getElementById("nouveauProduit").value.trim();
+  if (!nom) { toast("Nom requis.", true); return; }
+  await db.ref("stock/labo_cat/produits/" + uid()).set({ nom, prix: 0, stock: 0, seuil: 0 });
+  document.getElementById("nouveauProduit").value = "";
+  await chargerListes();
+}
+
+async function supprimerProduit(pid) {
+  if (!confirm("Supprimer ce produit du catalogue Labo ?")) return;
+  await db.ref("stock/labo_cat/produits/" + pid).remove();
+  await chargerListes();
+}
+
+async function ajouterProduction() {
+  if (!ACTIVE_WEEK) { toast("Aucune semaine active.", true); return; }
+  if (ACTIVE_WEEK.bloquee) { toast("La semaine active est bloquée.", true); return; }
+  const membreId = document.getElementById("fMembre").value;
+  const pid = document.getElementById("fProduit").value;
+  const qte = Number(document.getElementById("fQte").value) || 0;
+  const resultat = document.getElementById("fResultat").value;
+  const raison = document.getElementById("fRaison").value;
+  const m = MEMBRES[membreId], prod = LABO_PRODUITS[pid];
+  if (!m || !prod || qte <= 0) { toast("Complétez le formulaire.", true); return; }
+
+  const entry = {
+    membre_id: membreId, prenom_membre: m.prenom, nom_membre: m.nom || "", grade_membre: m.grade || "",
+    action: "Labo", action_id: LABO_ACTION_ID, quantite: qte,
+    date: document.getElementById("fDate").value || todayISO(), heure: nowHHMM(),
+    resultat, raison_echec: resultat === "Échec" ? raison : "",
+    argent_sale: 0, argent_propre: 0, gains_totaux: 0,
+    produit_drogue: prod.nom, produit_drogue_id: pid,
+    createdAt: Date.now()
+  };
+  await db.ref("actions/" + ACTIVE_WEEK.id + "/" + uid()).set(entry);
+
+  if (resultat === "Réussite") {
+    const ref = db.ref(`labo_stock/${membreId}/${pid}`);
+    const snap = await ref.once("value");
+    const current = Number(snap.val()) || 0;
+    await ref.set(current + qte);
+  }
+
+  toast("Production enregistrée.");
+  document.getElementById("fQte").value = 1;
+  document.getElementById("fResultat").value = "Réussite";
+  toggleRaison();
+  await chargerTout();
+}
+
+async function afficherStock() {
+  const membreId = document.getElementById("selStockMembre").value;
+  const zone = document.getElementById("zoneStock");
+  const produitsIds = Object.keys(LABO_PRODUITS);
+  if (!produitsIds.length) { zone.innerHTML = '<p class="muted small">Aucun produit Labo configuré.</p>'; return; }
+
+  if (membreId) {
+    const stockMembre = LABO_STOCK[membreId] || {};
+    zone.innerHTML = `<table><thead><tr><th>Produit</th><th>Stock</th></tr></thead><tbody>
+      ${produitsIds.map(pid => `<tr><td>${LABO_PRODUITS[pid].nom}</td><td>${Number(stockMembre[pid]) || 0}</td></tr>`).join("")}
+    </tbody></table>`;
+  } else {
+    const membresActifs = entries(MEMBRES).filter(([, m]) => m.actif !== false);
+    zone.innerHTML = `<table><thead><tr><th>Membre</th>${produitsIds.map(pid => `<th>${LABO_PRODUITS[pid].nom}</th>`).join("")}</tr></thead><tbody>
+      ${membresActifs.map(([id, m]) => `<tr><td>${m.prenom}</td>${produitsIds.map(pid => `<td>${Number((LABO_STOCK[id] || {})[pid]) || 0}</td>`).join("")}</tr>`).join("")}
+    </tbody></table>`;
+  }
+}
+
+async function supprimerProduction(semaineId, id, membreId, pid, qte, resultat) {
+  if (!confirm("Supprimer cette production ?")) return;
+  if (resultat === "Réussite") {
+    const ref = db.ref(`labo_stock/${membreId}/${pid}`);
+    const snap = await ref.once("value");
+    const current = Number(snap.val()) || 0;
+    await ref.set(Math.max(0, current - qte));
+  }
+  await db.ref("actions/" + semaineId + "/" + id).remove();
+  toast("Production supprimée.");
+  await chargerTout();
+}
+
+function renderHistorique() {
+  const fm = document.getElementById("filtMembre").value;
+  const fr = document.getElementById("filtResultat").value;
+  const limite = Number(document.getElementById("filtLimite").value) || 10;
+  const rows = (HISTORIQUE || []).filter(a => (!fm || a.membre_id === fm) && (!fr || a.resultat === fr)).slice(0, limite);
+  document.getElementById("tblHistorique").innerHTML = rows.length ? rows.map(a => `
+    <tr>
+      <td>${a.date} ${a.heure || ""}</td>
+      <td>${a.prenom_membre}</td>
+      <td>${a.produit_drogue || ""}</td>
+      <td>${a.quantite}</td>
+      <td><span class="badge ${a.resultat === "Réussite" ? "badge-ok" : "badge-fail"}">${a.resultat}</span></td>
+      <td>${SESSION.role === "admin" ? `<span class="btn btn-sm btn-danger" onclick="supprimerProduction('${ACTIVE_WEEK.id}','${a.id}','${a.membre_id}','${a.produit_drogue_id}',${a.quantite},'${a.resultat}')">Suppr.</span>` : ""}</td>
+    </tr>`).join("") : '<tr class="empty-row"><td colspan="6">Aucune production</td></tr>';
+}
+
+let HISTORIQUE = [];
+
+async function chargerListes() {
+  const [snapM, snapStock, snapLaboStock] = await Promise.all([
+    db.ref("membres").once("value"), db.ref("stock/labo_cat").once("value"), db.ref("labo_stock").once("value")
+  ]);
+  MEMBRES = snapM.val() || {};
+  LABO_PRODUITS = (snapStock.val() || {}).produits || {};
+  LABO_STOCK = snapLaboStock.val() || {};
+
+  const selM = document.getElementById("fMembre"), filtM = document.getElementById("filtMembre"), selStockM = document.getElementById("selStockMembre");
+  selM.innerHTML = ""; filtM.innerHTML = '<option value="">Tous les membres</option>'; selStockM.innerHTML = '<option value="">Tous les membres</option>';
+  entries(MEMBRES).forEach(([id, m]) => {
+    if (m.actif === false) return;
+    const label = m.prenom + (m.nom ? " " + m.nom : "");
+    selM.appendChild(new Option(label, id, id === SESSION.id, id === SESSION.id));
+    filtM.appendChild(new Option(label, id));
+    selStockM.appendChild(new Option(label, id, id === SESSION.id, id === SESSION.id));
+  });
+
+  const selP = document.getElementById("fProduit");
+  const prodEntries = Object.entries(LABO_PRODUITS);
+  selP.innerHTML = prodEntries.length
+    ? prodEntries.map(([pid, p]) => `<option value="${pid}">${p.nom}</option>`).join("")
+    : '<option value="">Aucun produit — ajoute-en un ci-dessus</option>';
+
+  if (SESSION.role === "admin") {
+    document.getElementById("listeProduitsAdmin").innerHTML = prodEntries.length
+      ? prodEntries.map(([pid, p]) => `<div>${p.nom} <span class="btn btn-sm btn-danger" onclick="supprimerProduit('${pid}')">Suppr.</span></div>`).join("")
+      : "Aucun produit configuré.";
+  }
+
+  afficherStock();
+}
+
+async function chargerHistorique() {
+  if (!ACTIVE_WEEK) { HISTORIQUE = []; renderHistorique(); return; }
+  const snap = await db.ref("actions/" + ACTIVE_WEEK.id).once("value");
+  const all = entries(snap.val()).map(([id, a]) => ({ id, ...a }));
+  HISTORIQUE = all.filter(a => a.action_id === LABO_ACTION_ID).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  renderHistorique();
+}
+
+async function chargerTout() {
+  await chargerListes();
+  await chargerHistorique();
+}
+
+(async function () {
+  SESSION = await initShell("labo", "Labo");
+  if (!SESSION) return;
+  await bootstrap();
+  ACTIVE_WEEK = await getActiveWeek();
+  renderContent();
+  document.getElementById("weekLabel").textContent = "Semaine active : " + (ACTIVE_WEEK ? ACTIVE_WEEK.nom : "—");
+  await chargerTout();
+})();
+</script>
+</body>
+</html>

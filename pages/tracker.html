@@ -139,7 +139,7 @@ async function chargerListes() {
   });
 
   const selA = document.getElementById("fAction"), filtA = document.getElementById("filtAction");
-  const actEntries = entries(ACTIONS_DISPO);
+  const actEntries = entries(ACTIONS_DISPO).filter(([, a]) => a.nom !== "Labo");
   if (!actEntries.length) {
     selA.innerHTML = '<option value="">Aucune action — à créer dans Admin</option>';
   } else {
