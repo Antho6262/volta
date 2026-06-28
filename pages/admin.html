@@ -243,29 +243,64 @@ async function tabStock(body) {
       <div class="panel">
         <div class="panel-head"><h2>${c.emoji || "📦"} ${c.nom}</h2>
           <span class="btn btn-sm btn-danger" onclick="suppCategorie('${c.id}')">Supprimer la catégorie</span></div>
-        <table><thead><tr><th>Produit</th><th>Prix</th><th>Stock</th><th>Seuil</th><th></th></tr></thead>
+        <table><thead><tr><th>Produit</th><th>Prix</th><th>Stock</th><th>Seuil</th>${c.nom === "Labo" ? "<th>Recette</th>" : ""}<th></th></tr></thead>
           <tbody>${entries(c.produits).length ? entries(c.produits).map(([pid, p]) => `
             <tr>
               <td><input type="text" value="${p.nom}" id="edNom_${c.id}_${pid}" style="min-width:140px;"></td>
               <td><input type="number" value="${p.prix || 0}" id="edPrix_${c.id}_${pid}" style="max-width:90px;"></td>
               <td><input type="number" value="${p.stock || 0}" id="edStock_${c.id}_${pid}" style="max-width:90px;"></td>
               <td><input type="number" value="${p.seuil || 0}" id="edSeuil_${c.id}_${pid}" style="max-width:90px;"></td>
+              ${c.nom === "Labo" ? `<td class="small muted">${(p.recipe || []).map(l => `${l.qty}x ${(c.produits[l.ingredientId] || {}).nom || "?"}`).join(", ") || "—"}</td>` : ""}
               <td style="white-space:nowrap;">
                 <span class="btn btn-sm btn-gold" onclick="modifierProduit('${c.id}','${pid}')">Enregistrer</span>
                 <span class="btn btn-sm btn-danger" onclick="suppProduit('${c.id}','${pid}')">Suppr.</span>
               </td>
             </tr>
-          `).join("") : '<tr class="empty-row"><td colspan="5">Aucun produit</td></tr>'}</tbody></table>
+          `).join("") : `<tr class="empty-row"><td colspan="${c.nom === "Labo" ? 6 : 5}">Aucun produit</td></tr>`}</tbody></table>
+        ${c.nom === "Labo" ? `
+        <div class="panel mt16" style="background:var(--bg-1);">
+          <p class="small muted">Un produit sans recette est un ingrédient brut. Un produit avec recette consomme les ingrédients (× quantité) du stock commun pour produire le résultat.</p>
+          <div class="row">
+            <div><label class="l">Nom du produit</label><input type="text" id="laboNom" placeholder="ex: Champignon rouge, Black Trip..."></div>
+          </div>
+          <div class="row mt8">
+            <div><label class="l">Ingrédient (optionnel, pour une recette)</label><select id="laboIngredient">${entries(c.produits).map(([pid, p]) => `<option value="${pid}">${p.nom}</option>`).join("") || '<option value="">Aucun produit existant</option>'}</select></div>
+            <div><label class="l">Qté nécessaire</label><input type="number" id="laboQte" value="1" min="1"></div>
+            <div style="display:flex;align-items:flex-end;"><button class="btn" onclick="ajouterLigneRecetteLabo()">Ajouter à la recette</button></div>
+          </div>
+          <div id="laboRecetteEnCours" class="small muted mt8">Aucune ligne de recette en cours.</div>
+          <button class="btn btn-gold mt8" onclick="ajouterProduitLabo('${c.id}')">Enregistrer le produit</button>
+        </div>` : `
         <div class="row mt16">
           <input type="text" placeholder="Nom du produit" id="pNom_${c.id}">
           <input type="number" placeholder="Prix" id="pPrix_${c.id}">
           <input type="number" placeholder="Stock initial" id="pStock_${c.id}">
           <input type="number" placeholder="Seuil d'alerte" id="pSeuil_${c.id}">
           <button class="btn btn-gold" onclick="ajouterProduit('${c.id}')">Ajouter produit</button>
-        </div>
+        </div>`}
       </div>
     `).join("") || '<p class="muted">Aucune catégorie de stock.</p>'}
   `;
+}
+let RECETTE_LABO_EN_COURS = [];
+function ajouterLigneRecetteLabo() {
+  const pid = document.getElementById("laboIngredient").value;
+  const qte = Number(document.getElementById("laboQte").value) || 0;
+  if (!pid || qte <= 0) { toast("Choisis un ingrédient et une quantité.", true); return; }
+  const nom = document.getElementById("laboIngredient").selectedOptions[0].textContent;
+  RECETTE_LABO_EN_COURS.push({ ingredientId: pid, qty: qte, nom });
+  document.getElementById("laboRecetteEnCours").textContent = "Recette en cours : " + RECETTE_LABO_EN_COURS.map(l => `${l.qty}x ${l.nom}`).join(", ");
+}
+async function ajouterProduitLabo(catId) {
+  const nom = document.getElementById("laboNom").value.trim();
+  if (!nom) { toast("Nom requis.", true); return; }
+  await db.ref("stock/" + catId + "/produits/" + uid()).set({
+    nom, prix: 0, stock: 0, seuil: 0,
+    recipe: RECETTE_LABO_EN_COURS.map(l => ({ ingredientId: l.ingredientId, qty: l.qty }))
+  });
+  RECETTE_LABO_EN_COURS = [];
+  toast("Produit Labo enregistré.");
+  loadTab("stock");
 }
 async function creerCategorie() {
   const nom = document.getElementById("catNom").value.trim();
