@@ -78,11 +78,13 @@ async function chargerQuotasProduits(membres, actions) {
 
 async function chargerQuotas() {
   const week = await getActiveWeek();
-  const [snapM, snapA] = await Promise.all([
+  const [snapM, snapA, snapG] = await Promise.all([
     db.ref("membres").once("value"),
-    week ? db.ref("actions/" + week.id).once("value") : Promise.resolve({ val: () => null })
+    week ? db.ref("actions/" + week.id).once("value") : Promise.resolve({ val: () => null }),
+    db.ref("grades").once("value")
   ]);
-  const membres = entries(snapM.val()).map(([id, m]) => ({ id, ...m })).filter(m => m.actif !== false);
+  const gradesMasques = new Set(entries(snapG.val()).filter(([, g]) => g.suivi === false).map(([, g]) => g.nom));
+  const membres = entries(snapM.val()).map(([id, m]) => ({ id, ...m })).filter(m => m.actif !== false && !gradesMasques.has(m.grade));
   const actions = entries(snapA.val()).map(([id, a]) => a);
 
   document.getElementById("tblQuotas").innerHTML = membres.length ? membres.map(m => {

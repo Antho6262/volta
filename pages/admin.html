@@ -468,14 +468,16 @@ function barreAdmin(pct) {
 }
 async function tabQuotas(body) {
   const week = await getActiveWeekAdmin();
-  const [snapM, snapAc, snapAcDispo, snapS, snapQC] = await Promise.all([
+  const [snapM, snapAc, snapAcDispo, snapS, snapQC, snapG] = await Promise.all([
     db.ref("membres").once("value"),
     week ? db.ref("actions/" + week.id).once("value") : Promise.resolve({ val: () => null }),
     db.ref("actions_dispo").once("value"),
     db.ref("stock").once("value"),
-    db.ref("quotas_categorie").once("value")
+    db.ref("quotas_categorie").once("value"),
+    db.ref("grades").once("value")
   ]);
-  const membres = entries(snapM.val()).map(([id, m]) => ({ id, ...m })).filter(m => m.actif !== false);
+  const gradesMasques = new Set(entries(snapG.val()).filter(([, g]) => g.suivi === false).map(([, g]) => g.nom));
+  const membres = entries(snapM.val()).map(([id, m]) => ({ id, ...m })).filter(m => m.actif !== false && !gradesMasques.has(m.grade));
   const actions = entries(snapAc.val()).map(([id, a]) => a);
   const actionsDispo = snapAcDispo.val() || {};
   const stock = snapS.val() || {};
@@ -542,22 +544,28 @@ async function tabGrades(body) {
       <div class="row"><input type="text" id="gNom" placeholder="Nom du grade">
       <input type="number" id="gOrdre" placeholder="Ordre hiérarchique (1 = le plus haut)">
       <button class="btn btn-primary" onclick="creerGrade()">Créer</button></div>
+      <label class="small muted mt8" style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="gSuivi" checked> Apparaît dans Quotas / Stats (décoche pour un grade invité)</label>
     </div>
     <div class="panel">
       <div class="panel-head"><h2>Grades</h2></div>
-      <table><thead><tr><th>Ordre</th><th>Nom</th><th></th></tr></thead>
+      <table><thead><tr><th>Ordre</th><th>Nom</th><th>Quotas / Stats</th><th></th></tr></thead>
         <tbody>${grades.length ? grades.map(g => `
           <tr><td>${g.ordre || "-"}</td><td>${g.nom}</td>
+          <td><span class="btn btn-sm ${g.suivi === false ? "" : "btn-gold"}" onclick="toggleSuiviGrade('${g.id}', ${g.suivi === false})">${g.suivi === false ? "🚫 Masqué" : "✅ Visible"}</span></td>
           <td>${g.nom === 'Fondateur' ? '<span class="small muted">protégé</span>' : `<span class="btn btn-sm btn-danger" onclick="suppGrade('${g.id}')">Suppr.</span>`}</td></tr>
-        `).join("") : '<tr class="empty-row"><td colspan="3">Aucun grade</td></tr>'}</tbody></table>
+        `).join("") : '<tr class="empty-row"><td colspan="4">Aucun grade</td></tr>'}</tbody></table>
     </div>
   `;
 }
 async function creerGrade() {
   const nom = document.getElementById("gNom").value.trim();
   if (!nom) { toast("Nom requis.", true); return; }
-  await db.ref("grades/" + uid()).set({ nom, ordre: Number(document.getElementById("gOrdre").value) || 9 });
+  await db.ref("grades/" + uid()).set({ nom, ordre: Number(document.getElementById("gOrdre").value) || 9, suivi: document.getElementById("gSuivi").checked });
   toast("Grade créé.");
+  loadTab("grades");
+}
+async function toggleSuiviGrade(id, nouvelEtat) {
+  await db.ref("grades/" + id + "/suivi").set(nouvelEtat);
   loadTab("grades");
 }
 async function suppGrade(id) { if (confirm("Supprimer ce grade ?")) { await db.ref("grades/" + id).remove(); loadTab("grades"); } }

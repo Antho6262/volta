@@ -30,16 +30,13 @@ const PAGES_DISPO = [
   { page: "labo",          label: "Labo" },
   { page: "stats",         label: "Stats" },
   { page: "stock",         label: "Stock" },
-  { page: "consommation",  label: "Consommation" },
-  { page: "logs",          label: "Logs" },
   { page: "quotas",        label: "Quotas" },
   { page: "blanchiment",   label: "Blanchiment" },
   { page: "paye",          label: "Paye" },
   { page: "transactions",  label: "Transactions" },
   { page: "taxes",         label: "Taxes" },
   { page: "admin",         label: "Admin" },
-  { page: "profil",        label: "Profil" },
-  { page: "tv",            label: "Mode TV" }
+  { page: "profil",        label: "Profil" }
 ];
 
 /* ---------- SESSION ---------- */

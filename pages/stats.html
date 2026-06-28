@@ -72,19 +72,23 @@ function onPorteeChange() {
 }
 
 async function init() {
-  const [snapM, snapAD, snapSem, snapAct, snapStock] = await Promise.all([
+  const [snapM, snapAD, snapSem, snapAct, snapStock, snapG] = await Promise.all([
     db.ref("membres").once("value"),
     db.ref("actions_dispo").once("value"),
     db.ref("semaines").once("value"),
     db.ref("actions").once("value"),
-    db.ref("stock").once("value")
+    db.ref("stock").once("value"),
+    db.ref("grades").once("value")
   ]);
-  MEMBRES = entries(snapM.val()).map(([id, m]) => ({ id, ...m })).filter(m => m.actif !== false);
+  const gradesMasques = new Set(entries(snapG.val()).filter(([, g]) => g.suivi === false).map(([, g]) => g.nom));
+  MEMBRES = entries(snapM.val()).map(([id, m]) => ({ id, ...m })).filter(m => m.actif !== false && !gradesMasques.has(m.grade));
+  const membresMasquesIds = new Set(entries(snapM.val()).filter(([, m]) => gradesMasques.has(m.grade)).map(([id]) => id));
   ACTIONS_DISPO = snapAD.val() || {};
   SEMAINES = entries(snapSem.val()).map(([id, s]) => ({ id, ...s })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const actionsParSemaine = snapAct.val() || {};
   ACTIONS_ALL = [];
   SEMAINES.forEach(s => { ACTIONS_ALL = ACTIONS_ALL.concat(entries(actionsParSemaine[s.id]).map(([id, a]) => ({ ...a, semaineId: s.id }))); });
+  ACTIONS_ALL = ACTIONS_ALL.filter(a => !membresMasquesIds.has(a.membre_id));
 
   const semaineActive = SEMAINES.find(s => s.bloquee !== true) || SEMAINES[0];
   document.getElementById("selSemaine").innerHTML = SEMAINES.map(s =>

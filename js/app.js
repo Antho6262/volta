@@ -9,16 +9,13 @@ const NAV_ITEMS = [
   { page: "labo",         icon: "🧪", label: "Labo",         file: "labo.html" },
   { page: "stats",        icon: "📊", label: "Stats",        file: "stats.html" },
   { page: "stock",        icon: "📦", label: "Stock",        file: "stock.html" },
-  { page: "consommation", icon: "💉", label: "Consommation", file: "consommation.html" },
-  { page: "logs",         icon: "📜", label: "Logs",         file: "logs.html" },
   { page: "quotas",       icon: "🎯", label: "Quotas",       file: "quotas.html" },
   { page: "blanchiment",  icon: "💵", label: "Blanchiment",  file: "blanchiment.html" },
   { page: "paye",         icon: "💰", label: "Paye",         file: "paye.html" },
   { page: "transactions", icon: "🔁", label: "Transactions", file: "transactions.html" },
   { page: "taxes",        icon: "🧾", label: "Taxes",        file: "taxes.html" },
   { page: "admin",        icon: "⚙️", label: "Admin",        file: "admin.html" },
-  { page: "profil",       icon: "👤", label: "Profil",       file: "profil.html" },
-  { page: "tv",            icon: "📺", label: "Mode TV",      file: "tv.html" }
+  { page: "profil",       icon: "👤", label: "Profil",       file: "profil.html" }
 ];
 
 /* Construit le shell (sidebar + topbar) dans #shell, protège la page,
