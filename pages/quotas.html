@@ -81,9 +81,10 @@ async function chargerQuotas() {
   const [snapM, snapA, snapG] = await Promise.all([
     db.ref("membres").once("value"),
     week ? db.ref("actions/" + week.id).once("value") : Promise.resolve({ val: () => null }),
-    db.ref("grades").once("value")
+    db.ref("visibilite_grades").once("value")
   ]);
-  const gradesMasques = new Set(entries(snapG.val()).filter(([, g]) => g.suivi === false).map(([, g]) => g.nom));
+  const visi = snapG.val() || {};
+  const gradesMasques = new Set(Object.keys(visi).filter(g => visi[g] && visi[g].quotas === false));
   const membres = entries(snapM.val()).map(([id, m]) => ({ id, ...m })).filter(m => m.actif !== false && !gradesMasques.has(m.grade));
   const actions = entries(snapA.val()).map(([id, a]) => a);
 

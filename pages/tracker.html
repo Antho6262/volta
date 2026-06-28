@@ -124,12 +124,13 @@ function autoFillMontants() {
 
 async function chargerListes() {
   const [snapM, snapA, snapS, snapG] = await Promise.all([
-    db.ref("membres").once("value"), db.ref("actions_dispo").once("value"), db.ref("stock").once("value"), db.ref("grades").once("value")
+    db.ref("membres").once("value"), db.ref("actions_dispo").once("value"), db.ref("stock").once("value"), db.ref("visibilite_grades").once("value")
   ]);
   MEMBRES = snapM.val() || {};
   ACTIONS_DISPO = snapA.val() || {};
   STOCK = snapS.val() || {};
-  const gradesMasques = new Set(entries(snapG.val()).filter(([, g]) => g.suivi === false).map(([, g]) => g.nom));
+  const visi = snapG.val() || {};
+  const gradesMasques = new Set(Object.keys(visi).filter(g => visi[g] && visi[g].tracker === false));
   GRADES_MASQUES = gradesMasques;
 
   const selM = document.getElementById("fMembre"), filtM = document.getElementById("filtMembre");

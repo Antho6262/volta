@@ -15,7 +15,8 @@
 <script src="../js/app.js"></script>
 <script>
 let SESSION;
-const TABS = ["semaines", "membres", "stock", "actions", "quotas", "grades", "permissions", "config"];
+const TABS = ["semaines", "membres", "stock", "actions", "quotas", "grades", "visibilite", "permissions", "config"];
+const TAB_LABELS = { visibilite: "Visibilité" };
 let currentTab = "semaines";
 
 function renderContent() {
@@ -26,7 +27,7 @@ function renderContent() {
     <div id="tabBody"></div>
   `;
   document.getElementById("tabsBar").innerHTML = TABS.map(t =>
-    `<div class="tab${t === currentTab ? ' active' : ''}" onclick="switchTab('${t}')">${t.charAt(0).toUpperCase() + t.slice(1)}</div>`
+    `<div class="tab${t === currentTab ? ' active' : ''}" onclick="switchTab('${t}')">${TAB_LABELS[t] || (t.charAt(0).toUpperCase() + t.slice(1))}</div>`
   ).join("");
   loadTab(currentTab);
 }
@@ -41,6 +42,7 @@ async function loadTab(t) {
   if (t === "actions") return tabActions(body);
   if (t === "quotas") return tabQuotas(body);
   if (t === "grades") return tabGrades(body);
+  if (t === "visibilite") return tabVisibilite(body);
   if (t === "permissions") return tabPermissions(body);
   if (t === "config") return tabConfig(body);
 }
@@ -474,9 +476,10 @@ async function tabQuotas(body) {
     db.ref("actions_dispo").once("value"),
     db.ref("stock").once("value"),
     db.ref("quotas_categorie").once("value"),
-    db.ref("grades").once("value")
+    db.ref("visibilite_grades").once("value")
   ]);
-  const gradesMasques = new Set(entries(snapG.val()).filter(([, g]) => g.suivi === false).map(([, g]) => g.nom));
+  const visi = snapG.val() || {};
+  const gradesMasques = new Set(Object.keys(visi).filter(g => visi[g] && visi[g].quotas === false));
   const membres = entries(snapM.val()).map(([id, m]) => ({ id, ...m })).filter(m => m.actif !== false && !gradesMasques.has(m.grade));
   const actions = entries(snapAc.val()).map(([id, a]) => a);
   const actionsDispo = snapAcDispo.val() || {};
@@ -544,31 +547,64 @@ async function tabGrades(body) {
       <div class="row"><input type="text" id="gNom" placeholder="Nom du grade">
       <input type="number" id="gOrdre" placeholder="Ordre hiérarchique (1 = le plus haut)">
       <button class="btn btn-primary" onclick="creerGrade()">Créer</button></div>
-      <label class="small muted mt8" style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="gSuivi" checked> Apparaît dans Quotas / Stats (décoche pour un grade invité)</label>
+      <p class="small muted mt8">La visibilité de chaque grade dans Quotas / Stats / Paye / Tracker / Labo se configure dans l'onglet "Visibilité".</p>
     </div>
     <div class="panel">
       <div class="panel-head"><h2>Grades</h2></div>
-      <table><thead><tr><th>Ordre</th><th>Nom</th><th>Quotas / Stats</th><th></th></tr></thead>
+      <table><thead><tr><th>Ordre</th><th>Nom</th><th></th></tr></thead>
         <tbody>${grades.length ? grades.map(g => `
           <tr><td>${g.ordre || "-"}</td><td>${g.nom}</td>
-          <td><span class="btn btn-sm ${g.suivi === false ? "" : "btn-gold"}" onclick="toggleSuiviGrade('${g.id}', ${g.suivi === false})">${g.suivi === false ? "🚫 Masqué" : "✅ Visible"}</span></td>
           <td>${g.nom === 'Fondateur' ? '<span class="small muted">protégé</span>' : `<span class="btn btn-sm btn-danger" onclick="suppGrade('${g.id}')">Suppr.</span>`}</td></tr>
-        `).join("") : '<tr class="empty-row"><td colspan="4">Aucun grade</td></tr>'}</tbody></table>
+        `).join("") : '<tr class="empty-row"><td colspan="3">Aucun grade</td></tr>'}</tbody></table>
     </div>
   `;
 }
 async function creerGrade() {
   const nom = document.getElementById("gNom").value.trim();
   if (!nom) { toast("Nom requis.", true); return; }
-  await db.ref("grades/" + uid()).set({ nom, ordre: Number(document.getElementById("gOrdre").value) || 9, suivi: document.getElementById("gSuivi").checked });
+  await db.ref("grades/" + uid()).set({ nom, ordre: Number(document.getElementById("gOrdre").value) || 9 });
   toast("Grade créé.");
   loadTab("grades");
 }
-async function toggleSuiviGrade(id, nouvelEtat) {
-  await db.ref("grades/" + id + "/suivi").set(nouvelEtat);
-  loadTab("grades");
-}
 async function suppGrade(id) { if (confirm("Supprimer ce grade ?")) { await db.ref("grades/" + id).remove(); loadTab("grades"); } }
+
+/* ===================== VISIBILITÉ (grade × page de suivi) ===================== */
+const VISIBILITE_PAGES = [
+  { page: "quotas",  label: "Quotas" },
+  { page: "stats",   label: "Stats" },
+  { page: "paye",    label: "Paye" },
+  { page: "tracker", label: "Tracker" },
+  { page: "labo",    label: "Labo" }
+];
+async function tabVisibilite(body) {
+  const [snapG, snapV] = await Promise.all([db.ref("grades").once("value"), db.ref("visibilite_grades").once("value")]);
+  const grades = entries(snapG.val()).map(([id, g]) => g.nom);
+  const visi = snapV.val() || {};
+  body.innerHTML = `
+    <div class="panel">
+      <div class="panel-head"><h2>Visibilité par grade</h2></div>
+      <p class="small muted">Coche les pages où les membres de ce grade doivent apparaître (membre listé, comptabilisé). Décoche pour un grade invité qui n'a pas besoin d'être suivi sur cette page. Tout est coché par défaut.</p>
+      <table>
+        <thead><tr><th>Grade</th>${VISIBILITE_PAGES.map(p => `<th>${p.label}</th>`).join("")}</tr></thead>
+        <tbody>
+          ${grades.map(g => `<tr><td>${g}</td>${VISIBILITE_PAGES.map(p =>
+            `<td style="text-align:center;"><input type="checkbox" id="visi_${g}_${p.page}" ${(!visi[g] || visi[g][p.page] !== false) ? "checked" : ""}></td>`
+          ).join("")}</tr>`).join("")}
+        </tbody>
+      </table>
+      ${grades.length === 0 ? '<p class="muted mt16">Crée d\'abord des grades dans l\'onglet Grades.</p>' :
+      '<button class="btn btn-primary mt16" onclick="enregistrerVisibilite()">Enregistrer la visibilité</button>'}
+    </div>
+  `;
+  window._visiGrades = grades;
+}
+async function enregistrerVisibilite() {
+  const grades = window._visiGrades || [];
+  const update = {};
+  grades.forEach(g => { update[g] = {}; VISIBILITE_PAGES.forEach(p => { update[g][p.page] = document.getElementById(`visi_${g}_${p.page}`).checked; }); });
+  await db.ref("visibilite_grades").update(update);
+  toast("Visibilité enregistrée.");
+}
 
 /* ===================== PERMISSIONS ===================== */
 async function tabPermissions(body) {

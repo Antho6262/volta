@@ -78,9 +78,10 @@ async function init() {
     db.ref("semaines").once("value"),
     db.ref("actions").once("value"),
     db.ref("stock").once("value"),
-    db.ref("grades").once("value")
+    db.ref("visibilite_grades").once("value")
   ]);
-  const gradesMasques = new Set(entries(snapG.val()).filter(([, g]) => g.suivi === false).map(([, g]) => g.nom));
+  const visi = snapG.val() || {};
+  const gradesMasques = new Set(Object.keys(visi).filter(g => visi[g] && visi[g].stats === false));
   MEMBRES = entries(snapM.val()).map(([id, m]) => ({ id, ...m })).filter(m => m.actif !== false && !gradesMasques.has(m.grade));
   const membresMasquesIds = new Set(entries(snapM.val()).filter(([, m]) => gradesMasques.has(m.grade)).map(([id]) => id));
   ACTIONS_DISPO = snapAD.val() || {};

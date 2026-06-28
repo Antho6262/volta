@@ -250,13 +250,14 @@ let HISTORIQUE = [];
 
 async function chargerListes() {
   const [snapM, snapStock, snapLaboStock, snapLaboCommun, snapG] = await Promise.all([
-    db.ref("membres").once("value"), db.ref("stock/labo_cat").once("value"), db.ref("labo_stock").once("value"), db.ref("labo_stock_commun").once("value"), db.ref("grades").once("value")
+    db.ref("membres").once("value"), db.ref("stock/labo_cat").once("value"), db.ref("labo_stock").once("value"), db.ref("labo_stock_commun").once("value"), db.ref("visibilite_grades").once("value")
   ]);
   MEMBRES = snapM.val() || {};
   LABO_PRODUITS = (snapStock.val() || {}).produits || {};
   LABO_STOCK = snapLaboStock.val() || {};
   LABO_STOCK_COMMUN = snapLaboCommun.val() || {};
-  const gradesMasques = new Set(entries(snapG.val()).filter(([, g]) => g.suivi === false).map(([, g]) => g.nom));
+  const visi = snapG.val() || {};
+  const gradesMasques = new Set(Object.keys(visi).filter(g => visi[g] && visi[g].labo === false));
   GRADES_MASQUES = gradesMasques;
 
   const wrapFM = document.getElementById("wrapFMembre"), filtM = document.getElementById("filtMembre"), selStockM = document.getElementById("selStockMembre");
