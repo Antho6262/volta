@@ -14,7 +14,7 @@
 <script src="../js/firebase-config.js"></script>
 <script src="../js/app.js"></script>
 <script>
-let SESSION, STOCK = {};
+let SESSION, STOCK = {}, MEMBRES = {};
 
 function renderContent() {
   document.getElementById("content").innerHTML = `
@@ -25,6 +25,7 @@ function renderContent() {
     <div class="panel mt16">
       <div class="panel-head"><h2>Nouvelle transaction</h2></div>
       <div class="row">
+        <div><label class="l">Membre</label><select id="tMembre"></select></div>
         <div><label class="l">Type</label><select id="tType"><option value="achat">Achat</option><option value="vente">Vente</option></select></div>
         <div><label class="l">Groupe</label><input type="text" id="tGroupe" placeholder="Nom du groupe"></div>
         <div><label class="l">Téléphone</label><input type="tel" id="tTel" placeholder="Optionnel"></div>
@@ -44,16 +45,24 @@ function renderContent() {
 
     <div class="panel">
       <div class="panel-head"><h2>Historique</h2></div>
-      <table><thead><tr><th>Date</th><th>Type</th><th>Groupe</th><th>Produit</th><th>Qté</th><th>Total</th><th>Argent</th><th></th></tr></thead>
-        <tbody id="tblTransactions"><tr class="empty-row"><td colspan="8">Chargement…</td></tr></tbody></table>
+      <table><thead><tr><th>Date</th><th>Membre</th><th>Type</th><th>Groupe</th><th>Produit</th><th>Qté</th><th>Total</th><th>Argent</th><th></th></tr></thead>
+        <tbody id="tblTransactions"><tr class="empty-row"><td colspan="9">Chargement…</td></tr></tbody></table>
     </div>
   `;
   document.getElementById("tDate").value = todayISO();
 }
 
 async function chargerProduits() {
-  const snap = await db.ref("stock").once("value");
-  STOCK = snap.val() || {};
+  const [snapS, snapM] = await Promise.all([db.ref("stock").once("value"), db.ref("membres").once("value")]);
+  STOCK = snapS.val() || {};
+  MEMBRES = snapM.val() || {};
+
+  const selM = document.getElementById("tMembre");
+  entries(MEMBRES).forEach(([id, m]) => {
+    if (m.actif === false) return;
+    selM.appendChild(new Option(m.prenom + (m.nom ? " " + m.nom : ""), id, id === SESSION.id, id === SESSION.id));
+  });
+
   const sel = document.getElementById("tProduit");
   sel.innerHTML = "";
   entries(STOCK).forEach(([catId, cat]) => entries(cat.produits).forEach(([pid, p]) =>
@@ -77,10 +86,13 @@ async function ajouterTransaction() {
   const prodNom = STOCK[catId].produits[pid].nom;
   const id = uid();
 
+  const membreId = document.getElementById("tMembre").value;
+  const m = MEMBRES[membreId] || {};
   await db.ref("transactions/" + id).set({
     type, groupe, telephone: document.getElementById("tTel").value.trim(),
     produit_id: pid, produit_nom: prodNom, catId, quantite: qte, prix,
     type_argent: typeArgent, notes: document.getElementById("tNotes").value.trim(),
+    membre_id: membreId, prenom_membre: m.prenom || SESSION.prenom,
     date: document.getElementById("tDate").value || todayISO(), createdAt: Date.now()
   });
 
@@ -105,7 +117,7 @@ async function chargerTransactions() {
   const list = entries(snap.val()).map(([id, t]) => ({ id, ...t })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const canDelete = SESSION.role === "admin";
   document.getElementById("tblTransactions").innerHTML = list.length ? list.map(t => `
-    <tr><td>${t.date}</td><td><span class="badge ${t.type === 'achat' ? 'badge-warn' : 'badge-ok'}">${t.type}</span></td><td>${t.groupe}</td>
+    <tr><td>${t.date}</td><td>${t.prenom_membre || "-"}</td><td><span class="badge ${t.type === 'achat' ? 'badge-warn' : 'badge-ok'}">${t.type}</span></td><td>${t.groupe}</td>
     <td>${t.produit_nom}</td><td>${t.quantite}</td><td>${formatMoney(t.quantite * t.prix)}</td><td>${t.type_argent}</td>
     <td>${canDelete ? `<span class="btn btn-sm btn-danger" onclick="supprimerTransaction('${t.id}')">Suppr.</span>` : ""}</td></tr>
   `).join("") : '<tr class="empty-row"><td colspan="8">Aucune transaction</td></tr>';
