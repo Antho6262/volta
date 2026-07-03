@@ -41,7 +41,9 @@ function renderContent() {
     </div>
 
     <div class="panel">
-      <div class="panel-head"><h2>Historique des mouvements d'argent</h2></div>
+      <div class="panel-head"><h2>Historique des mouvements d'argent</h2>
+        <select id="filtLimiteArgent" onchange="chargerArgent()"><option value="10">Afficher 10</option><option value="30">Afficher 30</option><option value="50">Afficher 50</option><option value="9999">Tout afficher</option></select>
+      </div>
       <table><thead><tr><th>Date</th><th>Compte</th><th>Type</th><th>Montant</th><th>Description</th><th>Responsable</th>${SESSION.role === 'admin' ? '<th></th>' : ''}</tr></thead>
         <tbody id="tblArgent"><tr class="empty-row"><td colspan="7">Chargement…</td></tr></tbody></table>
     </div>
@@ -72,7 +74,8 @@ async function chargerArgent() {
 
   const lignesSale = entries(snapSale.val()).map(([id, l]) => ({ id, compte: "sale", ...l }));
   const lignesPropre = entries(snapPropre.val()).map(([id, l]) => ({ id, compte: "propre", ...l }));
-  const toutes = lignesSale.concat(lignesPropre).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 60);
+  const limite = Number(document.getElementById("filtLimiteArgent")?.value) || 10;
+  const toutes = lignesSale.concat(lignesPropre).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, limite);
   const canDelete = SESSION.role === "admin";
 
   document.getElementById("tblArgent").innerHTML = toutes.length ? toutes.map(l => `

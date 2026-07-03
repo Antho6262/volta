@@ -125,10 +125,12 @@ async function payer(membreId, prenom, montantBase) {
   await db.ref(`payes/${SEMAINE_SEL.id}/${membreId}`).set({
     montant, type_argent: typeArgent, date: todayISO(), par: SESSION.prenom, createdAt: Date.now()
   });
-  await db.ref(`argent/${typeArgent}/` + uid()).set({
-    date: todayISO(), description: "Paye — " + prenom + " (" + SEMAINE_SEL.nom + ")",
-    type: "Sortie", montant, responsable: SESSION.prenom, createdAt: Date.now()
-  });
+  if (montant > 0) {
+    await db.ref(`argent/${typeArgent}/` + uid()).set({
+      date: todayISO(), description: "Paye — " + prenom + " (" + SEMAINE_SEL.nom + ")",
+      type: "Sortie", montant, responsable: SESSION.prenom, createdAt: Date.now()
+    });
+  }
 
   toast("Paiement enregistré.");
   chargerPaye();
