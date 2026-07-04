@@ -24,6 +24,7 @@ function renderContent() {
     <h1>Dashboard</h1>
     <div class="sigil-rule"></div>
     <p class="muted small" id="weekLabel">Semaine active : —</p>
+    <div id="eventBanner"></div>
 
     <div class="grid cols-4 mt16">
       <div class="card"><h3>Solde sale</h3><div class="stat-num" id="soldeSale">0 $</div><div class="stat-sub">argent non blanchi</div></div>
@@ -111,6 +112,27 @@ function renderDerived() {
   db.ref("argent/propre").on("value", snap => { DATA.argentPropre = snap.val() || {}; renderDerived(); });
   db.ref("stock").on("value", snap => { DATA.stock = snap.val() || {}; renderDerived(); });
   db.ref("membres").on("value", snap => { DATA.membres = snap.val() || {}; renderDerived(); });
+
+  db.ref("events_drogue").on("value", snap => {
+    const now = Date.now();
+    const events = entries(snap.val() || {}).map(([, e]) => e);
+    const actif = events.find(e => now >= e.debut && now <= e.fin);
+    const banner = document.getElementById("eventBanner");
+    if (actif) {
+      const fin = new Date(actif.fin).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+      banner.innerHTML = `<div style="
+        margin:16px 0; padding:18px 24px; border-radius:8px;
+        background:linear-gradient(135deg,rgba(212,175,55,0.25),rgba(212,175,55,0.08));
+        border:2px solid var(--gold); text-align:center; animation:pulse 2s infinite;">
+        🎯 <strong style="color:var(--gold);font-size:1.2em;">EVENT EN COURS</strong>
+        &nbsp;—&nbsp; Vente de Drogue à <strong style="color:var(--gold)">${actif.taux}%</strong>
+        jusqu'à <strong style="color:var(--gold)">${fin}</strong>
+        ${actif.nom ? `&nbsp;·&nbsp; ${actif.nom}` : ""}
+      </div>`;
+    } else {
+      banner.innerHTML = "";
+    }
+  });
 })();
 </script>
 </body>
