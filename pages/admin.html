@@ -640,8 +640,9 @@ async function enregistrerPermissions() {
 
 /* ===================== CONFIG ===================== */
 async function tabConfig(body) {
-  const snap = await db.ref("config").once("value");
-  const cfg = snap.val() || {};
+  const [snapCfg, snapEv] = await Promise.all([db.ref("config").once("value"), db.ref("events_drogue").once("value")]);
+  const cfg = snapCfg.val() || {};
+  const events = entries(snapEv.val()).map(([id, e]) => ({ id, ...e })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   body.innerHTML = `
     <div class="panel">
       <div class="panel-head"><h2>Paramètres généraux</h2></div>
@@ -651,12 +652,44 @@ async function tabConfig(body) {
       </div>
       <div class="row mt8">
         <div><label class="l">Taux de paye — Vente de Drogue (%)</label><input type="number" id="cfgTauxPayeDrogue" value="${cfg.taux_paye_drogue ?? 20}"></div>
-        <div><label class="l">Taux de paye — Autres actions + blanchiment (%)</label><input type="number" id="cfgTauxPayeAutres" value="${cfg.taux_paye_autres ?? 45}"></div>
+        <div><label class="l">Taux de paye — Autres actions (%)</label><input type="number" id="cfgTauxPayeAutres" value="${cfg.taux_paye_autres ?? 45}"></div>
       </div>
-      <p class="small muted mt8">Dans l'onglet Paye : montant suggéré = (gains Vente de Drogue × taux Drogue) + (gains des autres actions + blanchiment × taux Autres). Modifiable au cas par cas avant validation.</p>
       <button class="btn btn-primary mt16" onclick="saveConfig()">Enregistrer</button>
     </div>
+
+    <div class="panel mt16">
+      <div class="panel-head"><h2>🎯 Events — Taux drogue spécial</h2></div>
+      <p class="small muted">Pendant la fenêtre définie, le taux de paye Vente de Drogue est remplacé par le taux event. Les actions enregistrées dans cette plage horaire bénéficient automatiquement du taux event lors du calcul de la paye.</p>
+      <div class="row mt8">
+        <div><label class="l">Début (date + heure)</label><input type="datetime-local" id="evDebut"></div>
+        <div><label class="l">Fin (date + heure)</label><input type="datetime-local" id="evFin"></div>
+        <div><label class="l">Taux event (%)</label><input type="number" id="evTaux" value="35" style="max-width:100px;"></div>
+        <div><label class="l">Nom (optionnel)</label><input type="text" id="evNom" placeholder="Ex: Event nuit"></div>
+        <div style="display:flex;align-items:flex-end;"><button class="btn btn-gold" onclick="creerEvent()">Créer l'event</button></div>
+      </div>
+      <table class="mt16"><thead><tr><th>Nom</th><th>Début</th><th>Fin</th><th>Taux</th><th></th></tr></thead>
+        <tbody>${events.length ? events.map(e => `
+          <tr><td>${e.nom || "—"}</td><td>${new Date(e.debut).toLocaleString("fr-FR")}</td><td>${new Date(e.fin).toLocaleString("fr-FR")}</td>
+          <td>${e.taux}%</td><td><span class="btn btn-sm btn-danger" onclick="supprimerEvent('${e.id}')">Suppr.</span></td></tr>
+        `).join("") : '<tr class="empty-row"><td colspan="5">Aucun event</td></tr>'}</tbody>
+      </table>
+    </div>
   `;
+}
+async function creerEvent() {
+  const debut = document.getElementById("evDebut").value;
+  const fin = document.getElementById("evFin").value;
+  const taux = Number(document.getElementById("evTaux").value);
+  const nom = document.getElementById("evNom").value.trim();
+  if (!debut || !fin || !taux) { toast("Remplis début, fin et taux.", true); return; }
+  if (new Date(fin) <= new Date(debut)) { toast("La fin doit être après le début.", true); return; }
+  await db.ref("events_drogue/" + uid()).set({ debut: new Date(debut).getTime(), fin: new Date(fin).getTime(), taux, nom, createdAt: Date.now() });
+  toast("Event créé.");
+  loadTab("config");
+}
+async function supprimerEvent(id) {
+  await db.ref("events_drogue/" + id).remove();
+  loadTab("config");
 }
 async function saveConfig() {
   await db.ref("config").update({

@@ -59,14 +59,15 @@ async function chargerPaye() {
   const debut = SEMAINE_SEL.createdAt || 0;
   const fin = SEMAINE_SEL.closedAt || Date.now();
 
-  const [snapM, snapA, snapAD, snapP, snapSale, snapPropre, snapG] = await Promise.all([
+  const [snapM, snapA, snapAD, snapP, snapSale, snapPropre, snapG, snapEv] = await Promise.all([
     db.ref("membres").once("value"),
     db.ref("actions/" + SEMAINE_SEL.id).once("value"),
     db.ref("actions_dispo").once("value"),
     db.ref("payes/" + SEMAINE_SEL.id).once("value"),
     db.ref("argent/sale").once("value"),
     db.ref("argent/propre").once("value"),
-    db.ref("visibilite_grades").once("value")
+    db.ref("visibilite_grades").once("value"),
+    db.ref("events_drogue").once("value")
   ]);
   const visi = snapG.val() || {};
   const gradesMasques = new Set(Object.keys(visi).filter(g => visi[g] && visi[g].paye === false));
@@ -74,6 +75,13 @@ async function chargerPaye() {
   const actions = entries(snapA.val()).map(([id, a]) => a);
   const actionsDispo = snapAD.val() || {};
   const payes = snapP.val() || {};
+  const events = entries(snapEv.val()).map(([id, e]) => e);
+
+  function tauxDrogueForAction(a) {
+    const ts = a.createdAt || 0;
+    const ev = events.find(e => ts >= e.debut && ts <= e.fin);
+    return ev ? ev.taux : TAUX_DROGUE;
+  }
 
   const calcSolde = v => entries(v).reduce((acc, [, l]) => acc + (l.type === "Sortie" ? -Number(l.montant || 0) : Number(l.montant || 0)), 0);
   document.getElementById("soldePropreDisp").textContent = formatMoney(calcSolde(snapPropre.val()));
@@ -86,13 +94,14 @@ async function chargerPaye() {
   let totalPaye = 0;
   document.getElementById("tblPaye").innerHTML = membres.length ? membres.map(m => {
     const mesActions = actions.filter(a => a.resultat === "Réussite" && (a.membre_id === m.id || (a.participants_ids && a.participants_ids.includes(m.id))));
-    const gainsDrogue = mesActions.filter(a => actionsDispo[a.action_id] && actionsDispo[a.action_id].cat_variable)
-      .reduce((acc, a) => acc + partGains(m.id, a), 0);
+    const actionsDrogue = mesActions.filter(a => actionsDispo[a.action_id] && actionsDispo[a.action_id].cat_variable);
+    const gainsDrogue = actionsDrogue.reduce((acc, a) => acc + partGains(m.id, a), 0);
     const gainsAction = mesActions.filter(a => !(actionsDispo[a.action_id] && actionsDispo[a.action_id].cat_variable))
       .reduce((acc, a) => acc + partGains(m.id, a), 0);
     const totalGenere = gainsDrogue + gainsAction;
     const dejaPaye = payes[m.id];
-    const suggestion = Math.round(gainsDrogue * TAUX_DROGUE / 100 + gainsAction * TAUX_AUTRES / 100);
+    const payeDrogue = actionsDrogue.reduce((acc, a) => acc + Math.round(partGains(m.id, a) * tauxDrogueForAction(a) / 100), 0);
+    const suggestion = payeDrogue + Math.round(gainsAction * TAUX_AUTRES / 100);
     const montant = dejaPaye ? Number(dejaPaye.montant) || 0 : suggestion;
     if (dejaPaye) totalPaye += Number(dejaPaye.montant) || 0;
 
