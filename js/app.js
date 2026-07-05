@@ -1,5 +1,5 @@
 /* ============================================================
-   KLAN NOSTRAD — app.js
+   VOLTA — app.js
    Sidebar / topbar communs + items de navigation.
    ============================================================ */
 
@@ -48,7 +48,7 @@ async function initShell(activePage, pageTitle) {
     <div class="shell">
       <aside class="sidebar">
         <div class="sidebar-head">
-          <img src="${root}img/logo.png" alt="Klan Nostrad" class="sidebar-coin">
+          <img src="${root}img/logo.png" alt="Volta" class="sidebar-coin">
           <div class="sidebar-logo"><span class="full">KLAN<br>NOSTRAD</span></div>
         </div>
         <nav class="nav">${navHtml}</nav>
@@ -60,7 +60,7 @@ async function initShell(activePage, pageTitle) {
       <div class="main">
         <div class="topbar">
           <div class="topbar-title">${pageTitle || ""}</div>
-          <div class="topbar-brand"><span class="coin">🪙</span> KLAN NOSTRAD</div>
+          <div class="topbar-brand"><span class="coin">🪙</span> VOLTA</div>
         </div>
         <main class="content fade-in" id="content"></main>
       </div>

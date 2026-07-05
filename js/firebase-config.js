@@ -1,5 +1,5 @@
 /* ============================================================
-   KLAN NOSTRAD — firebase-config.js
+   VOLTA — firebase-config.js
    Config Firebase + session + permissions.
 
    ⚠️ A REMPLIR : créez votre propre projet Firebase (gratuit) sur
@@ -18,7 +18,7 @@ const FIREBASE_CONFIG = {
   measurementId: "G-PCJ6QGNDTE"
 };
 
-const NOM_GROUPE = "Klan Nostrad";
+const NOM_GROUPE = "Volta";
 
 firebase.initializeApp(FIREBASE_CONFIG);
 const db = firebase.database();
