@@ -706,6 +706,7 @@ async function saveConfig() {
 }
 
 (async function () {
+  await authReady;
   SESSION = await initShell("admin", "Admin");
   if (!SESSION) return;
   renderContent();

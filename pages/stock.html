@@ -178,6 +178,7 @@ async function mouvement() {
 }
 
 (async function () {
+  await authReady;
   SESSION = await initShell("stock", "Stock");
   if (!SESSION) return;
   renderContent();

@@ -229,6 +229,7 @@ function chargerStats() {
 }
 
 (async function () {
+  await authReady;
   SESSION = await initShell("stats", "Stats");
   if (!SESSION) return;
   renderContent();

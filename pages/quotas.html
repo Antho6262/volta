@@ -109,6 +109,7 @@ async function chargerQuotas() {
 }
 
 (async function () {
+  await authReady;
   SESSION = await initShell("quotas", "Quotas");
   if (!SESSION) return;
   renderContent();

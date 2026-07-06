@@ -129,6 +129,7 @@ async function supprimerTaxe(id) {
 }
 
 (async function () {
+  await authReady;
   SESSION = await initShell("taxes", "Taxes");
   if (!SESSION) return;
   renderContent();

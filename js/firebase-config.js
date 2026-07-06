@@ -23,8 +23,11 @@ const NOM_GROUPE = "Volta";
 firebase.initializeApp(FIREBASE_CONFIG);
 const db = firebase.database();
 
-firebase.auth().onAuthStateChanged(user => {
-  if (!user) firebase.auth().signInAnonymously();
+const authReady = new Promise(resolve => {
+  firebase.auth().onAuthStateChanged(user => {
+    if (user) resolve(user);
+    else firebase.auth().signInAnonymously().then(cred => resolve(cred.user));
+  });
 });
 
 /* ---------- liste des pages de l'app (utilisée par admin + permissions) ---------- */

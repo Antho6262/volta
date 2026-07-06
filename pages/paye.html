@@ -154,6 +154,7 @@ async function payer(membreId, prenom, montantBase) {
 }
 
 (async function () {
+  await authReady;
   SESSION = await initShell("paye", "Paye");
   if (!SESSION) return;
   const snapCfg = await db.ref("config").once("value");

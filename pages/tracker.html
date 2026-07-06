@@ -288,6 +288,7 @@ async function supprimerAction(id) {
 }
 
 (async function () {
+  await authReady;
   SESSION = await initShell("tracker", "Tracker");
   if (!SESSION) return;
   ACTIVE_WEEK = await getActiveWeek();

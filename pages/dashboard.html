@@ -102,6 +102,7 @@ function renderDerived() {
 }
 
 (async function () {
+  await authReady;
   SESSION = await initShell("dashboard", "Dashboard");
   if (!SESSION) return;
   renderContent();

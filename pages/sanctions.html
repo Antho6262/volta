@@ -79,6 +79,7 @@ async function chargerSanctions() {
 async function supprimerSanction(id) { if (confirm("Supprimer cette sanction ?")) { await db.ref("sanctions/" + id).remove(); chargerSanctions(); } }
 
 (async function () {
+  await authReady;
   SESSION = await initShell("sanctions", "Sanctions");
   if (!SESSION) return;
   renderContent();

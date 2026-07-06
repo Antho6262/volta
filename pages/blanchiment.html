@@ -87,6 +87,7 @@ async function chargerHisto() {
 }
 
 (async function () {
+  await authReady;
   SESSION = await initShell("blanchiment", "Blanchiment");
   if (!SESSION) return;
   const snapCfg = await db.ref("config/blanchiment_taux").once("value");

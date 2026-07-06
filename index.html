@@ -80,8 +80,8 @@ function doLogin() {
     errEl.textContent = "Compte désactivé.";
     return;
   }
-  firebase.auth().signInAnonymously().then(cred => {
-    return db.ref("sessions/" + cred.user.uid).set(id);
+  authReady.then(user => {
+    return db.ref("sessions/" + user.uid).set(id);
   }).then(() => {
     setSession({ id, prenom: m.prenom, nom: m.nom || "", grade: m.grade, role: m.role || "membre" });
     window.location.href = "pages/dashboard.html";

@@ -104,6 +104,7 @@ async function majObjMembre(membreId, objId, val) {
 }
 
 (async function () {
+  await authReady;
   SESSION = await initShell("objectifs", "Objectifs");
   if (!SESSION) return;
   renderContent();

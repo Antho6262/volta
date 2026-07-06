@@ -141,6 +141,7 @@ async function supprimerTransaction(id) {
 }
 
 (async function () {
+  await authReady;
   SESSION = await initShell("transactions", "Transactions");
   if (!SESSION) return;
   renderContent();

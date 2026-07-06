@@ -307,6 +307,7 @@ async function chargerTout() {
 }
 
 (async function () {
+  await authReady;
   SESSION = await initShell("labo", "Labo");
   if (!SESSION) return;
   await bootstrap();
