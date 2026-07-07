@@ -276,8 +276,30 @@ async function renderTable() {
       <td><span class="badge ${a.resultat === 'Réussite' ? 'badge-ok' : 'badge-fail'}">${a.resultat}</span></td>
       <td>${formatMoney(a.argent_sale)}</td>
       <td>${formatMoney(a.argent_propre)}</td>
-      <td>${canDelete ? `<span class="btn btn-sm btn-danger" onclick="supprimerAction('${a.id}')">Suppr.</span>` : ""}</td>
+      <td>${a.membre_id === SESSION.id || canDelete ? `<span class="btn btn-sm" onclick="modifierAction('${a.id}')">Modifier</span>` : ""} ${canDelete ? `<span class="btn btn-sm btn-danger" onclick="supprimerAction('${a.id}')">Suppr.</span>` : ""}</td>
     </tr>`).join("") : '<tr class="empty-row"><td colspan="8">Aucune action enregistrée</td></tr>';
+}
+
+async function modifierAction(id) {
+  const a = ALL_ACTIONS.find(x => x.id === id);
+  if (!a) return;
+  const qte = window.prompt("Quantité :", a.quantite);
+  if (qte === null) return;
+  const sale = window.prompt("Argent sale :", a.argent_sale);
+  if (sale === null) return;
+  const propre = window.prompt("Argent propre :", a.argent_propre);
+  if (propre === null) return;
+  const resultat = window.prompt("Résultat (Réussite / Échec) :", a.resultat);
+  if (resultat === null) return;
+  await db.ref("actions/" + ACTIVE_WEEK.id + "/" + id).update({
+    quantite: Number(qte) || 0,
+    argent_sale: Number(sale) || 0,
+    argent_propre: Number(propre) || 0,
+    gains_totaux: (Number(sale) || 0) + (Number(propre) || 0),
+    resultat: resultat.trim() || a.resultat
+  });
+  toast("Action modifiée.");
+  renderTable();
 }
 
 async function supprimerAction(id) {
