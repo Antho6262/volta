@@ -287,10 +287,10 @@ async function modifierAction(id) {
   const nomsActions = Object.values(ACTIONS_DISPO).filter(x => x.nom !== "Labo").map(x => x.nom).join(", ");
   const nouveauNomAction = window.prompt("Action (" + nomsActions + ") :", a.action);
   if (nouveauNomAction === null) return;
-  const actionDef = Object.entries(ACTIONS_DISPO).find(([, x]) => x.nom === nouveauNomAction.trim());
+  const actionDef = Object.entries(ACTIONS_DISPO).find(([, x]) => x.nom === nouveauNomAction.trim()) || [a.action_id, ACTIONS_DISPO[a.action_id]];
 
   let produitDrogue = a.produit_drogue, produitDrogueId = a.produit_drogue_id;
-  if (actionDef && actionDef[1].cat_variable && STOCK[actionDef[1].cat_variable]) {
+  if (actionDef[1] && actionDef[1].cat_variable && STOCK[actionDef[1].cat_variable]) {
     const produitsDispo = Object.values(STOCK[actionDef[1].cat_variable].produits || {}).map(p => p.nom).join(", ");
     const nouveauProduit = window.prompt("Produit (" + produitsDispo + ") :", a.produit_drogue || "");
     if (nouveauProduit === null) return;
@@ -306,20 +306,52 @@ async function modifierAction(id) {
   if (propre === null) return;
   const resultat = window.prompt("Résultat (Réussite / Échec) :", a.resultat);
   if (resultat === null) return;
+  const nouveauResultat = resultat.trim() || a.resultat;
+  const nouvelleQte = Number(qte) || 0;
+
+  // rollback du stock déduit par l'ancienne version de l'action (si elle était une réussite)
+  if (a.resultat === "Réussite") {
+    const ancienDef = ACTIONS_DISPO[a.action_id];
+    if (a.produit_drogue_id && ancienDef && ancienDef.cat_variable) {
+      const ref = db.ref(`stock/${ancienDef.cat_variable}/produits/${a.produit_drogue_id}/stock`);
+      const snap = await ref.once("value");
+      await ref.set((Number(snap.val()) || 0) + Number(a.quantite || 0));
+    }
+    if (ancienDef && ancienDef.recipe && ancienDef.recipe.length) {
+      for (const item of ancienDef.recipe) {
+        const ref = db.ref(`stock/${item.catId}/produits/${item.prodId}/stock`);
+        const snap = await ref.once("value");
+        await ref.set((Number(snap.val()) || 0) + Number(item.qty) * Number(a.quantite || 0));
+      }
+    }
+  }
+
+  // application du stock pour la nouvelle version (si résultat Réussite)
+  if (nouveauResultat === "Réussite" && actionDef[1]) {
+    if (produitDrogueId && actionDef[1].cat_variable) {
+      const ref = db.ref(`stock/${actionDef[1].cat_variable}/produits/${produitDrogueId}/stock`);
+      const snap = await ref.once("value");
+      await ref.set(Math.max(0, (Number(snap.val()) || 0) - nouvelleQte));
+    }
+    if (actionDef[1].recipe && actionDef[1].recipe.length) {
+      await deduireStock(actionDef[1], nouvelleQte);
+    }
+  }
 
   const update = {
-    quantite: Number(qte) || 0,
+    quantite: nouvelleQte,
     argent_sale: Number(sale) || 0,
     argent_propre: Number(propre) || 0,
     gains_totaux: (Number(sale) || 0) + (Number(propre) || 0),
-    resultat: resultat.trim() || a.resultat
+    resultat: nouveauResultat
   };
-  if (actionDef) { update.action = actionDef[1].nom; update.action_id = actionDef[0]; }
+  if (actionDef[0]) { update.action = actionDef[1].nom; update.action_id = actionDef[0]; }
   if (produitDrogueId) { update.produit_drogue = produitDrogue; update.produit_drogue_id = produitDrogueId; }
 
   await db.ref("actions/" + ACTIVE_WEEK.id + "/" + id).update(update);
-  toast("Action modifiée.");
-  renderTable();
+  toast("Action modifiée, stock ajusté.");
+  await chargerListes();
+  await renderTable();
 }
 
 async function supprimerAction(id) {
