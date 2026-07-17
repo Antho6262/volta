@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Armurerie — Volta</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+<div id="shell"></div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="../js/firebase-config.js"></script>
+<script src="../js/app.js"></script>
+<script>
+let SESSION, MEMBRES = {};
+
+function renderContent() {
+  document.getElementById("content").innerHTML = `
+    <h1>Armurerie</h1>
+    <div class="sigil-rule"></div>
+
+    <div class="panel mt16">
+      <div class="panel-head"><h2>Nouvelle arme</h2></div>
+      <div class="row">
+        <div><label class="l">Membre</label><select id="wMembre"></select></div>
+        <div><label class="l">Type d'arme</label><input type="text" id="wType" placeholder="Ex: Pistolet, Fusil d'assaut..."></div>
+        <div><label class="l">Numéro de série</label><input type="text" id="wSerie" placeholder="Ex: A123456"></div>
+      </div>
+      <button class="btn btn-primary mt16" onclick="ajouterArme()">Enregistrer</button>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>Armes enregistrées</h2></div>
+      <table><thead><tr><th>Membre</th><th>Type</th><th>Numéro de série</th><th>Date</th><th></th></tr></thead>
+        <tbody id="tblArmes"><tr class="empty-row"><td colspan="5">Chargement…</td></tr></tbody></table>
+    </div>
+  `;
+}
+
+async function chargerMembres() {
+  const snap = await db.ref("membres").once("value");
+  MEMBRES = snap.val() || {};
+  const sel = document.getElementById("wMembre");
+  sel.innerHTML = "";
+  entries(MEMBRES).forEach(([id, m]) => {
+    if (m.actif === false) return;
+    sel.appendChild(new Option(m.prenom + (m.nom ? " " + m.nom : ""), id, id === SESSION.id, id === SESSION.id));
+  });
+}
+
+async function ajouterArme() {
+  const membreId = document.getElementById("wMembre").value;
+  const type = document.getElementById("wType").value.trim();
+  const serie = document.getElementById("wSerie").value.trim();
+  if (!membreId || !type || !serie) { toast("Complétez le formulaire.", true); return; }
+  const m = MEMBRES[membreId] || {};
+  await db.ref("armurerie/" + uid()).set({
+    membre_id: membreId, prenom_membre: m.prenom || "", nom_membre: m.nom || "",
+    type_arme: type, numero_serie: serie,
+    date: todayISO(), par: SESSION.prenom, createdAt: Date.now()
+  });
+  toast("Arme enregistrée.");
+  document.getElementById("wType").value = ""; document.getElementById("wSerie").value = "";
+  chargerArmes();
+}
+
+async function chargerArmes() {
+  const snap = await db.ref("armurerie").once("value");
+  const list = entries(snap.val()).map(([id, a]) => ({ id, ...a })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const canDelete = SESSION.role === "admin";
+  document.getElementById("tblArmes").innerHTML = list.length ? list.map(a => `
+    <tr><td>${a.prenom_membre} ${a.nom_membre || ""}</td><td>${a.type_arme}</td><td class="mono">${a.numero_serie}</td><td>${a.date}</td>
+    ${canDelete || a.membre_id === SESSION.id ? `<td><span class="btn btn-sm btn-danger" onclick="supprimerArme('${a.id}')">Suppr.</span></td>` : "<td></td>"}
+    </tr>
+  `).join("") : '<tr class="empty-row"><td colspan="5">Aucune arme enregistrée</td></tr>';
+}
+
+async function supprimerArme(id) {
+  if (!confirm("Supprimer cette arme ?")) return;
+  await db.ref("armurerie/" + id).remove();
+  toast("Arme supprimée.");
+  chargerArmes();
+}
+
+(async function () {
+  await authReady;
+  SESSION = await initShell("armurerie", "Armurerie");
+  if (!SESSION) return;
+  renderContent();
+  await chargerMembres();
+  await chargerArmes();
+})();
+</script>
+</body>
+</html>

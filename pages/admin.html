@@ -641,9 +641,11 @@ async function enregistrerPermissions() {
 
 /* ===================== CONFIG ===================== */
 async function tabConfig(body) {
-  const [snapCfg, snapEv] = await Promise.all([db.ref("config").once("value"), db.ref("events_drogue").once("value")]);
+  const [snapCfg, snapEv, snapG] = await Promise.all([db.ref("config").once("value"), db.ref("events_drogue").once("value"), db.ref("grades").once("value")]);
   const cfg = snapCfg.val() || {};
   const events = entries(snapEv.val()).map(([id, e]) => ({ id, ...e })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const grades = entries(snapG.val()).map(([id, g]) => g.nom).sort();
+  const tauxGrades = cfg.taux_paye_grades || {};
   body.innerHTML = `
     <div class="panel">
       <div class="panel-head"><h2>Paramètres généraux</h2></div>
@@ -652,11 +654,25 @@ async function tabConfig(body) {
         <div><label class="l">Webhook Discord — résumé de semaine (optionnel)</label><input type="text" id="cfgWebhook" value="${cfg.discord_webhook_semaine || ''}" placeholder="https://discord.com/api/webhooks/..."></div>
       </div>
       <div class="row mt8">
-        <div><label class="l">Taux de paye — Vente de Drogue (%)</label><input type="number" id="cfgTauxPayeDrogue" value="${cfg.taux_paye_drogue ?? 20}"></div>
-        <div><label class="l">Taux de paye — Autres actions (%)</label><input type="number" id="cfgTauxPayeAutres" value="${cfg.taux_paye_autres ?? 45}"></div>
+        <div><label class="l">Taux de paye par défaut — Vente de Drogue (%)</label><input type="number" id="cfgTauxPayeDrogue" value="${cfg.taux_paye_drogue ?? 20}"></div>
+        <div><label class="l">Taux de paye par défaut — Autres actions (%)</label><input type="number" id="cfgTauxPayeAutres" value="${cfg.taux_paye_autres ?? 45}"></div>
       </div>
       <button class="btn btn-primary mt16" onclick="saveConfig()">Enregistrer</button>
     </div>
+
+    <div class="panel mt16">
+      <div class="panel-head"><h2>Taux de paye par rôle (grade)</h2></div>
+      <p class="small muted">Laisse vide pour utiliser le taux par défaut ci-dessus.</p>
+      <table><thead><tr><th>Grade</th><th>Drogue (%)</th><th>Autres actions (%)</th></tr></thead>
+        <tbody>${grades.length ? grades.map(g => `
+          <tr><td>${g}</td>
+            <td><input type="number" id="cfgGradeDrogue_${g}" value="${tauxGrades[g] && tauxGrades[g].drogue != null ? tauxGrades[g].drogue : ''}" style="max-width:100px" placeholder="${cfg.taux_paye_drogue ?? 20}"></td>
+            <td><input type="number" id="cfgGradeAutres_${g}" value="${tauxGrades[g] && tauxGrades[g].autres != null ? tauxGrades[g].autres : ''}" style="max-width:100px" placeholder="${cfg.taux_paye_autres ?? 45}"></td>
+          </tr>`).join("") : '<tr class="empty-row"><td colspan="3">Aucun grade — crée-en dans l\'onglet Grades</td></tr>'}</tbody>
+      </table>
+      ${grades.length ? '<button class="btn btn-primary mt16" onclick="saveTauxGrades()">Enregistrer les taux par grade</button>' : ''}
+    </div>
+    <div id="_gradesListForConfig" style="display:none;">${grades.join("||")}</div>
 
     <div class="panel mt16">
       <div class="panel-head"><h2>🎯 Events — Taux spéciaux</h2></div>
@@ -678,6 +694,19 @@ async function tabConfig(body) {
       </table>
     </div>
   `;
+}
+async function saveTauxGrades() {
+  const grades = document.getElementById("_gradesListForConfig").textContent.split("||").filter(Boolean);
+  const update = {};
+  grades.forEach(g => {
+    const d = document.getElementById("cfgGradeDrogue_" + g).value;
+    const a = document.getElementById("cfgGradeAutres_" + g).value;
+    update[g] = {};
+    if (d !== "") update[g].drogue = Number(d);
+    if (a !== "") update[g].autres = Number(a);
+  });
+  await db.ref("config/taux_paye_grades").set(update);
+  toast("Taux par grade enregistrés.");
 }
 async function creerEvent() {
   const debut = document.getElementById("evDebut").value;

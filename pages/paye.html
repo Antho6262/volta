@@ -60,7 +60,7 @@ async function chargerPaye() {
   const debut = SEMAINE_SEL.createdAt || 0;
   const fin = SEMAINE_SEL.closedAt || Date.now();
 
-  const [snapM, snapA, snapAD, snapP, snapSale, snapPropre, snapG, snapEv] = await Promise.all([
+  const [snapM, snapA, snapAD, snapP, snapSale, snapPropre, snapG, snapEv, snapCfg] = await Promise.all([
     db.ref("membres").once("value"),
     db.ref("actions/" + SEMAINE_SEL.id).once("value"),
     db.ref("actions_dispo").once("value"),
@@ -68,8 +68,10 @@ async function chargerPaye() {
     db.ref("argent/sale").once("value"),
     db.ref("argent/propre").once("value"),
     db.ref("visibilite_grades").once("value"),
-    db.ref("events_drogue").once("value")
+    db.ref("events_drogue").once("value"),
+    db.ref("config/taux_paye_grades").once("value")
   ]);
+  const tauxGrades = snapCfg.val() || {};
   const visi = snapG.val() || {};
   const gradesMasques = new Set(Object.keys(visi).filter(g => visi[g] && visi[g].paye === false));
   const membres = entries(snapM.val()).map(([id, m]) => ({ id, ...m })).filter(m => m.actif !== false && !gradesMasques.has(m.grade));
@@ -81,12 +83,18 @@ async function chargerPaye() {
   function tauxDrogueForAction(a) {
     const ts = a.createdAt || 0;
     const ev = events.find(e => ts >= e.debut && ts <= e.fin);
-    return ev && ev.taux ? ev.taux : TAUX_DROGUE;
+    if (ev && ev.taux) return ev.taux;
+    const g = tauxGrades[a.grade_membre];
+    if (g && g.drogue != null) return g.drogue;
+    return TAUX_DROGUE;
   }
   function tauxActionsForAction(a) {
     const ts = a.createdAt || 0;
     const ev = events.find(e => ts >= e.debut && ts <= e.fin);
-    return ev && ev.taux_actions ? ev.taux_actions : TAUX_AUTRES;
+    if (ev && ev.taux_actions) return ev.taux_actions;
+    const g = tauxGrades[a.grade_membre];
+    if (g && g.autres != null) return g.autres;
+    return TAUX_AUTRES;
   }
 
   const calcSolde = v => entries(v).reduce((acc, [, l]) => acc + (l.type === "Sortie" ? -Number(l.montant || 0) : Number(l.montant || 0)), 0);

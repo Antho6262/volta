@@ -283,6 +283,21 @@ async function renderTable() {
 async function modifierAction(id) {
   const a = ALL_ACTIONS.find(x => x.id === id);
   if (!a) return;
+
+  const nomsActions = Object.values(ACTIONS_DISPO).filter(x => x.nom !== "Labo").map(x => x.nom).join(", ");
+  const nouveauNomAction = window.prompt("Action (" + nomsActions + ") :", a.action);
+  if (nouveauNomAction === null) return;
+  const actionDef = Object.entries(ACTIONS_DISPO).find(([, x]) => x.nom === nouveauNomAction.trim());
+
+  let produitDrogue = a.produit_drogue, produitDrogueId = a.produit_drogue_id;
+  if (actionDef && actionDef[1].cat_variable && STOCK[actionDef[1].cat_variable]) {
+    const produitsDispo = Object.values(STOCK[actionDef[1].cat_variable].produits || {}).map(p => p.nom).join(", ");
+    const nouveauProduit = window.prompt("Produit (" + produitsDispo + ") :", a.produit_drogue || "");
+    if (nouveauProduit === null) return;
+    const prodEntry = Object.entries(STOCK[actionDef[1].cat_variable].produits || {}).find(([, p]) => p.nom === nouveauProduit.trim());
+    if (prodEntry) { produitDrogueId = prodEntry[0]; produitDrogue = prodEntry[1].nom; }
+  }
+
   const qte = window.prompt("Quantité :", a.quantite);
   if (qte === null) return;
   const sale = window.prompt("Argent sale :", a.argent_sale);
@@ -291,13 +306,18 @@ async function modifierAction(id) {
   if (propre === null) return;
   const resultat = window.prompt("Résultat (Réussite / Échec) :", a.resultat);
   if (resultat === null) return;
-  await db.ref("actions/" + ACTIVE_WEEK.id + "/" + id).update({
+
+  const update = {
     quantite: Number(qte) || 0,
     argent_sale: Number(sale) || 0,
     argent_propre: Number(propre) || 0,
     gains_totaux: (Number(sale) || 0) + (Number(propre) || 0),
     resultat: resultat.trim() || a.resultat
-  });
+  };
+  if (actionDef) { update.action = actionDef[1].nom; update.action_id = actionDef[0]; }
+  if (produitDrogueId) { update.produit_drogue = produitDrogue; update.produit_drogue_id = produitDrogueId; }
+
+  await db.ref("actions/" + ACTIVE_WEEK.id + "/" + id).update(update);
   toast("Action modifiée.");
   renderTable();
 }
