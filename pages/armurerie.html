@@ -95,12 +95,54 @@ async function ajouterArme() {
   chargerArmes();
 }
 
+function photoPourArme(a) {
+  if (a.photo_url) return a.photo_url;
+  const match = CATALOGUE_ARMES.find(c => c.nom.toLowerCase() === (a.type_arme || "").toLowerCase());
+  return match ? match.photo : "";
+}
+
+function compresserImage(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const maxH = 120;
+        const scale = maxH / img.height;
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width * scale;
+        canvas.height = maxH;
+        canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/png"));
+      };
+      img.onerror = reject;
+      img.src = reader.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function importerPhoto(id, input) {
+  const file = input.files[0];
+  if (!file) return;
+  const dataUrl = await compresserImage(file);
+  await db.ref("armurerie/" + id + "/photo_url").set(dataUrl);
+  toast("Photo importée.");
+  chargerArmes();
+}
+
 async function chargerArmes() {
   const snap = await db.ref("armurerie").once("value");
   const list = entries(snap.val()).map(([id, a]) => ({ id, ...a })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const canDelete = SESSION.role === "admin";
-  document.getElementById("tblArmes").innerHTML = list.length ? list.map(a => `
-    <tr><td style="text-align:left;">${a.photo_url ? `<img src="${a.photo_url}" alt="${a.type_arme}" style="height:70px;">` : ""}</td>
+  document.getElementById("tblArmes").innerHTML = list.length ? list.map(a => {
+    const photo = photoPourArme(a);
+    const cellPhoto = photo
+      ? `<img src="${photo}" alt="${a.type_arme}" style="height:70px;cursor:pointer;" onclick="document.getElementById('imp_${a.id}').click()">`
+      : `<label class="btn btn-sm" style="cursor:pointer;">+<input type="file" accept="image/*" id="imp_${a.id}" style="display:none;" onchange="importerPhoto('${a.id}', this)"></label>`;
+    return `
+    <tr><td style="text-align:left;">${cellPhoto}${photo ? `<input type="file" accept="image/*" id="imp_${a.id}" style="display:none;" onchange="importerPhoto('${a.id}', this)">` : ""}</td>
     <td>${a.prenom_membre} ${a.nom_membre || ""}</td><td>${a.type_arme}</td><td class="mono">${a.numero_serie}</td><td>${a.date}</td>
     ${canDelete || a.membre_id === SESSION.id ? `<td><span class="btn btn-sm btn-danger" onclick="supprimerArme('${a.id}')">Suppr.</span></td>` : "<td></td>"}
     </tr>
