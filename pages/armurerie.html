@@ -54,7 +54,7 @@ function renderContent() {
         <div><label class="l">Type d'arme</label><input type="text" id="wType" placeholder="Ex: B10, MSGS2, M9A3..."></div>
         <div><label class="l">Numéro de série</label><input type="text" id="wSerie" placeholder="Ex: A123456"></div>
         <div><label class="l">Photo (optionnel)</label><select id="wPhoto" onchange="majPhoto()"></select></div>
-        <div><label class="l">Aperçu</label><img id="wPhotoPreview" style="height:40px;display:none;"></div>
+        <div><label class="l">Aperçu</label><div style="text-align:left;"><img id="wPhotoPreview" style="height:80px;display:none;"></div></div>
       </div>
       <button class="btn btn-primary mt16" onclick="ajouterArme()">Enregistrer</button>
     </div>
@@ -100,7 +100,7 @@ async function chargerArmes() {
   const list = entries(snap.val()).map(([id, a]) => ({ id, ...a })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const canDelete = SESSION.role === "admin";
   document.getElementById("tblArmes").innerHTML = list.length ? list.map(a => `
-    <tr><td>${a.photo_url ? `<img src="${a.photo_url}" alt="${a.type_arme}" style="height:40px;">` : ""}</td>
+    <tr><td style="text-align:left;">${a.photo_url ? `<img src="${a.photo_url}" alt="${a.type_arme}" style="height:70px;">` : ""}</td>
     <td>${a.prenom_membre} ${a.nom_membre || ""}</td><td>${a.type_arme}</td><td class="mono">${a.numero_serie}</td><td>${a.date}</td>
     ${canDelete || a.membre_id === SESSION.id ? `<td><span class="btn btn-sm btn-danger" onclick="supprimerArme('${a.id}')">Suppr.</span></td>` : "<td></td>"}
     </tr>
