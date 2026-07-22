@@ -17,6 +17,29 @@
 <script>
 let SESSION, MEMBRES = {};
 
+const CATALOGUE_ARMES = [
+  { nom: "M9A3", photo: "img/armes/m9a3.png" },
+  { nom: "Vortex Full", photo: "img/armes/vortex_full.png" },
+  { nom: "Micro SMG", photo: "img/armes/micro_smg.png" },
+  { nom: "SNS", photo: "img/armes/sns.png" },
+  { nom: "SNS Pico", photo: "img/armes/sns_pico.png" },
+  { nom: "Glock", photo: "img/armes/glock.png" },
+  { nom: "Glock 17", photo: "img/armes/glock17.png" }
+];
+
+function remplirCatalogue() {
+  const sel = document.getElementById("wType");
+  sel.innerHTML = "";
+  CATALOGUE_ARMES.forEach(a => sel.appendChild(new Option(a.nom, a.nom)));
+  majPhoto();
+}
+
+function majPhoto() {
+  const nom = document.getElementById("wType").value;
+  const arme = CATALOGUE_ARMES.find(a => a.nom === nom);
+  document.getElementById("wPhotoPreview").src = arme ? arme.photo : "";
+}
+
 function renderContent() {
   document.getElementById("content").innerHTML = `
     <h1>Armurerie</h1>
@@ -26,15 +49,16 @@ function renderContent() {
       <div class="panel-head"><h2>Nouvelle arme</h2></div>
       <div class="row">
         <div><label class="l">Membre</label><select id="wMembre"></select></div>
-        <div><label class="l">Type d'arme</label><input type="text" id="wType" placeholder="Ex: Pistolet, Fusil d'assaut..."></div>
+        <div><label class="l">Type d'arme</label><select id="wType" onchange="majPhoto()"></select></div>
         <div><label class="l">Numéro de série</label><input type="text" id="wSerie" placeholder="Ex: A123456"></div>
+        <div><label class="l">Aperçu</label><img id="wPhotoPreview" style="height:40px;display:block;"></div>
       </div>
       <button class="btn btn-primary mt16" onclick="ajouterArme()">Enregistrer</button>
     </div>
 
     <div class="panel">
       <div class="panel-head"><h2>Armes enregistrées</h2></div>
-      <table><thead><tr><th>Membre</th><th>Type</th><th>Numéro de série</th><th>Date</th><th></th></tr></thead>
+      <table><thead><tr><th>Photo</th><th>Membre</th><th>Type</th><th>Numéro de série</th><th>Date</th><th></th></tr></thead>
         <tbody id="tblArmes"><tr class="empty-row"><td colspan="5">Chargement…</td></tr></tbody></table>
     </div>
   `;
@@ -53,17 +77,19 @@ async function chargerMembres() {
 
 async function ajouterArme() {
   const membreId = document.getElementById("wMembre").value;
-  const type = document.getElementById("wType").value.trim();
+  const type = document.getElementById("wType").value;
   const serie = document.getElementById("wSerie").value.trim();
+  const arme = CATALOGUE_ARMES.find(a => a.nom === type);
+  const photo = arme ? arme.photo : "";
   if (!membreId || !type || !serie) { toast("Complétez le formulaire.", true); return; }
   const m = MEMBRES[membreId] || {};
   await db.ref("armurerie/" + uid()).set({
     membre_id: membreId, prenom_membre: m.prenom || "", nom_membre: m.nom || "",
-    type_arme: type, numero_serie: serie,
+    type_arme: type, numero_serie: serie, photo_url: photo || "",
     date: todayISO(), par: SESSION.prenom, createdAt: Date.now()
   });
   toast("Arme enregistrée.");
-  document.getElementById("wType").value = ""; document.getElementById("wSerie").value = "";
+  document.getElementById("wSerie").value = "";
   chargerArmes();
 }
 
@@ -72,10 +98,11 @@ async function chargerArmes() {
   const list = entries(snap.val()).map(([id, a]) => ({ id, ...a })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const canDelete = SESSION.role === "admin";
   document.getElementById("tblArmes").innerHTML = list.length ? list.map(a => `
-    <tr><td>${a.prenom_membre} ${a.nom_membre || ""}</td><td>${a.type_arme}</td><td class="mono">${a.numero_serie}</td><td>${a.date}</td>
+    <tr><td>${a.photo_url ? `<img src="${a.photo_url}" alt="${a.type_arme}" style="height:40px;">` : ""}</td>
+    <td>${a.prenom_membre} ${a.nom_membre || ""}</td><td>${a.type_arme}</td><td class="mono">${a.numero_serie}</td><td>${a.date}</td>
     ${canDelete || a.membre_id === SESSION.id ? `<td><span class="btn btn-sm btn-danger" onclick="supprimerArme('${a.id}')">Suppr.</span></td>` : "<td></td>"}
     </tr>
-  `).join("") : '<tr class="empty-row"><td colspan="5">Aucune arme enregistrée</td></tr>';
+  `).join("") : '<tr class="empty-row"><td colspan="6">Aucune arme enregistrée</td></tr>';
 }
 
 async function supprimerArme(id) {
@@ -90,6 +117,7 @@ async function supprimerArme(id) {
   SESSION = await initShell("armurerie", "Armurerie");
   if (!SESSION) return;
   renderContent();
+  remplirCatalogue();
   await chargerMembres();
   await chargerArmes();
 })();
