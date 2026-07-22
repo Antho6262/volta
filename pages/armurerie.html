@@ -28,17 +28,17 @@ const CATALOGUE_ARMES = [
 ];
 
 function remplirCatalogue() {
-  const sel = document.getElementById("wPhoto");
+  const sel = document.getElementById("wType");
   sel.innerHTML = "";
-  sel.appendChild(new Option("Aucune", ""));
-  CATALOGUE_ARMES.forEach(a => sel.appendChild(new Option(a.nom, a.photo)));
+  CATALOGUE_ARMES.forEach(a => sel.appendChild(new Option(a.nom, a.nom)));
   majPhoto();
 }
 
 function majPhoto() {
-  const photo = document.getElementById("wPhoto").value;
+  const nom = document.getElementById("wType").value;
+  const arme = CATALOGUE_ARMES.find(a => a.nom === nom);
   const preview = document.getElementById("wPhotoPreview");
-  if (photo) { preview.src = photo; preview.style.display = "block"; }
+  if (arme) { preview.src = arme.photo; preview.style.display = "block"; }
   else { preview.src = ""; preview.style.display = "none"; }
 }
 
@@ -51,9 +51,8 @@ function renderContent() {
       <div class="panel-head"><h2>Nouvelle arme</h2></div>
       <div class="row">
         <div><label class="l">Membre</label><select id="wMembre"></select></div>
-        <div><label class="l">Type d'arme</label><input type="text" id="wType" placeholder="Ex: B10, MSGS2, M9A3..."></div>
+        <div><label class="l">Type d'arme</label><select id="wType" onchange="majPhoto()"></select></div>
         <div><label class="l">Numéro de série</label><input type="text" id="wSerie" placeholder="Ex: A123456"></div>
-        <div><label class="l">Photo (optionnel)</label><select id="wPhoto" onchange="majPhoto()"></select></div>
         <div><label class="l">Aperçu</label><div style="text-align:left;"><img id="wPhotoPreview" style="height:80px;display:none;"></div></div>
       </div>
       <button class="btn btn-primary mt16" onclick="ajouterArme()">Enregistrer</button>
@@ -80,9 +79,10 @@ async function chargerMembres() {
 
 async function ajouterArme() {
   const membreId = document.getElementById("wMembre").value;
-  const type = document.getElementById("wType").value.trim();
+  const type = document.getElementById("wType").value;
   const serie = document.getElementById("wSerie").value.trim();
-  const photo = document.getElementById("wPhoto").value;
+  const arme = CATALOGUE_ARMES.find(a => a.nom === type);
+  const photo = arme ? arme.photo : "";
   if (!membreId || !type || !serie) { toast("Complétez le formulaire.", true); return; }
   const m = MEMBRES[membreId] || {};
   await db.ref("armurerie/" + uid()).set({
@@ -91,7 +91,7 @@ async function ajouterArme() {
     date: todayISO(), par: SESSION.prenom, createdAt: Date.now()
   });
   toast("Arme enregistrée.");
-  document.getElementById("wType").value = ""; document.getElementById("wSerie").value = "";
+  document.getElementById("wSerie").value = "";
   chargerArmes();
 }
 
