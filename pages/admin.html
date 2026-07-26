@@ -504,7 +504,8 @@ async function tabQuotas(body) {
   `;
 
   // une seule cible par catégorie "produit variable" (ex: Drogue), peu importe le produit exact vendu
-  const catIds = [...new Set(Object.values(actionsDispo).map(a => a.cat_variable).filter(Boolean))];
+  const catIds = [...new Set(Object.values(actionsDispo).map(a => a.cat_variable).filter(Boolean))]
+    .filter(catId => (stock[catId] || {}).nom !== "Labo");
   const wrap = document.getElementById("quotasProduitsAdminWrap");
   if (!catIds.length) {
     wrap.innerHTML = '<div class="panel"><p class="muted small">Aucune action avec produit variable (ex: Vente de Drogue) n\'est configurée dans l\'onglet Actions.</p></div>';

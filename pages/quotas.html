@@ -51,7 +51,8 @@ async function chargerQuotasProduits(membres, actions) {
   const stock = snapS.val() || {};
   const quotasCategorie = snapQ.val() || {};
 
-  const catIds = [...new Set(Object.values(actionsDispo).map(a => a.cat_variable).filter(Boolean))];
+  const catIds = [...new Set(Object.values(actionsDispo).map(a => a.cat_variable).filter(Boolean))]
+    .filter(catId => (stock[catId] || {}).nom !== "Labo");
   if (!catIds.length) { wrap.innerHTML = ""; return; }
 
   wrap.innerHTML = catIds.map(catId => {

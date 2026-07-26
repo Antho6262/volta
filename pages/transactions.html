@@ -45,12 +45,30 @@ function renderContent() {
     </div>
 
     <div class="panel">
-      <div class="panel-head"><h2>Historique</h2></div>
+      <div class="panel-head"><h2>Historique</h2><button class="btn btn-sm" onclick="exporterTransactionsCSV()">⬇ Exporter CSV</button></div>
       <table><thead><tr><th>Date</th><th>Membre</th><th>Type</th><th>Groupe</th><th>Produit</th><th>Qté</th><th>Total</th><th>Argent</th><th></th></tr></thead>
         <tbody id="tblTransactions"><tr class="empty-row"><td colspan="9">Chargement…</td></tr></tbody></table>
     </div>
   `;
   document.getElementById("tDate").value = todayISO();
+}
+
+let TRANSACTIONS_LIST = [];
+
+function exporterTransactionsCSV() {
+  if (!TRANSACTIONS_LIST.length) { toast("Aucune transaction à exporter.", true); return; }
+  const headers = ["Date", "Membre", "Type", "Groupe", "Téléphone", "Produit", "Quantité", "Prix unitaire", "Total", "Argent", "Notes"];
+  const lignes = TRANSACTIONS_LIST.map(t => [
+    t.date, t.prenom_membre || "", t.type, t.groupe, t.telephone || "",
+    t.produit_nom, t.quantite, t.prix, t.quantite * t.prix, t.type_argent, t.notes || ""
+  ]);
+  const esc = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const csv = [headers.map(esc).join(";"), ...lignes.map(l => l.map(esc).join(";"))].join("\r\n");
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "transactions_" + todayISO() + ".csv";
+  a.click();
 }
 
 async function chargerProduits() {
@@ -116,6 +134,7 @@ async function ajouterTransaction() {
 async function chargerTransactions() {
   const snap = await db.ref("transactions").once("value");
   const list = entries(snap.val()).map(([id, t]) => ({ id, ...t })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  TRANSACTIONS_LIST = list;
   const canDelete = SESSION.role === "admin";
   document.getElementById("tblTransactions").innerHTML = list.length ? list.map(t => `
     <tr><td>${t.date}</td><td>${t.prenom_membre || "-"}</td><td><span class="badge ${t.type === 'achat' ? 'badge-warn' : 'badge-ok'}">${t.type}</span></td><td>${t.groupe}</td>
