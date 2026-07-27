@@ -17,10 +17,18 @@
 <script>
 let SESSION, ACTIVE_WEEK = null, VIEW_WEEK = null, ALL_SEMAINES = [], MEMBRES = {}, ACTIONS_DISPO = {}, STOCK = {}, GRADES_MASQUES = new Set(), EVENT_ACTIF = null;
 
-async function getActiveWeek() {
-  const snap = await db.ref("semaines").once("value");
+function majSemaines(snap) {
   ALL_SEMAINES = entries(snap.val()).map(([id, s]) => ({ id, ...s })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  return ALL_SEMAINES.find(s => s.bloquee !== true) || ALL_SEMAINES[0] || null;
+  const nouvelleActive = ALL_SEMAINES.find(s => s.bloquee !== true) || ALL_SEMAINES[0] || null;
+  const changement = !ACTIVE_WEEK || !nouvelleActive || ACTIVE_WEEK.id !== nouvelleActive.id;
+  ACTIVE_WEEK = nouvelleActive;
+  if (changement && !VIEW_WEEK) {
+    if (ACTIVE_WEEK) toast("Semaine active mise à jour : " + ACTIVE_WEEK.nom);
+  }
+  const lbl = document.getElementById("weekLabel");
+  if (lbl) lbl.textContent = ACTIVE_WEEK ? `Semaine active : ${ACTIVE_WEEK.nom}${ACTIVE_WEEK.bloquee ? " (bloquée — créez une nouvelle semaine dans Admin)" : ""}` : "Aucune semaine active — créez-en une dans Admin → Semaines pour pouvoir enregistrer des actions.";
+  remplirFiltSemaine();
+  if (!VIEW_WEEK) renderTable();
 }
 
 function remplirFiltSemaine() {
@@ -387,13 +395,17 @@ async function supprimerAction(id) {
   await authReady;
   SESSION = await initShell("tracker", "Tracker");
   if (!SESSION) return;
-  ACTIVE_WEEK = await getActiveWeek();
+
+  const snap = await db.ref("semaines").once("value");
+  ALL_SEMAINES = entries(snap.val()).map(([id, s]) => ({ id, ...s })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  ACTIVE_WEEK = ALL_SEMAINES.find(s => s.bloquee !== true) || ALL_SEMAINES[0] || null;
+
   renderContent();
-  const lbl = document.getElementById("weekLabel");
-  if (lbl) lbl.textContent = ACTIVE_WEEK ? `Semaine active : ${ACTIVE_WEEK.nom}${ACTIVE_WEEK.bloquee ? " (bloquée — créez une nouvelle semaine dans Admin)" : ""}` : "Aucune semaine active — créez-en une dans Admin → Semaines pour pouvoir enregistrer des actions.";
   await chargerListes();
   remplirFiltSemaine();
   await renderTable();
+
+  db.ref("semaines").on("value", majSemaines);
 
   db.ref("events_drogue").on("value", snap => {
     const now = Date.now();
