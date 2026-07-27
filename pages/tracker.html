@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Tracker — Klan Nostrad</title>
+<title>Tracker — Kronen Krieg</title>
 <link rel="stylesheet" href="../css/style.css">
 </head>
 <body>
@@ -15,13 +15,25 @@
 <script src="../js/firebase-config.js"></script>
 <script src="../js/app.js"></script>
 <script>
-let SESSION, ACTIVE_WEEK = null, MEMBRES = {}, ACTIONS_DISPO = {}, STOCK = {}, GRADES_MASQUES = new Set(), EVENT_ACTIF = null;
+let SESSION, ACTIVE_WEEK = null, VIEW_WEEK = null, ALL_SEMAINES = [], MEMBRES = {}, ACTIONS_DISPO = {}, STOCK = {}, GRADES_MASQUES = new Set(), EVENT_ACTIF = null;
 
 async function getActiveWeek() {
   const snap = await db.ref("semaines").once("value");
-  const list = entries(snap.val()).map(([id, s]) => ({ id, ...s }));
-  list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  return list.find(s => s.bloquee !== true) || list[0] || null;
+  ALL_SEMAINES = entries(snap.val()).map(([id, s]) => ({ id, ...s })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  return ALL_SEMAINES.find(s => s.bloquee !== true) || ALL_SEMAINES[0] || null;
+}
+
+function remplirFiltSemaine() {
+  const sel = document.getElementById("filtSemaine");
+  sel.innerHTML = ALL_SEMAINES.map(s => `<option value="${s.id}">${s.nom}${s.bloquee ? " (bloquée)" : ""}</option>`).join("");
+  sel.value = VIEW_WEEK ? VIEW_WEEK.id : (ACTIVE_WEEK ? ACTIVE_WEEK.id : "");
+}
+
+function onFiltSemaineChange() {
+  const id = document.getElementById("filtSemaine").value;
+  VIEW_WEEK = ALL_SEMAINES.find(s => s.id === id) || null;
+  document.getElementById("histWeekLabel").textContent = VIEW_WEEK ? VIEW_WEEK.nom : "";
+  renderTable();
 }
 
 function renderContent() {
@@ -62,8 +74,9 @@ function renderContent() {
 
     <div class="panel">
       <div class="panel-head">
-        <h2>Historique — ${ACTIVE_WEEK ? ACTIVE_WEEK.nom : ""}</h2>
-        <div class="row" style="max-width:520px;">
+        <h2>Historique — <span id="histWeekLabel">${ACTIVE_WEEK ? ACTIVE_WEEK.nom : ""}</span></h2>
+        <div class="row" style="max-width:650px;">
+          <select id="filtSemaine" onchange="onFiltSemaineChange()"></select>
           <select id="filtMembre" onchange="renderTable()"><option value="">Tous les membres</option></select>
           <select id="filtAction" onchange="renderTable()"><option value="">Toutes les actions</option></select>
           <select id="filtResultat" onchange="renderTable()"><option value="">Tous résultats</option><option>Réussite</option><option>Échec</option></select>
@@ -96,7 +109,7 @@ function onActionChange() {
     wrap.style.display = "none";
     sel.innerHTML = "";
   }
-  document.getElementById("equipeWrap").style.display = (act && (act.nom === "Armurerie" || act.nom === "Fleeca")) ? "block" : "none";
+  document.getElementById("equipeWrap").style.display = (act && act.nom === "Fleeca") ? "block" : "none";
   renderEquipeCheckboxes();
 
   // bannière event drogue
@@ -124,7 +137,7 @@ function onActionChange() {
 
 function estActionEquipe() {
   const act = ACTIONS_DISPO[document.getElementById("fAction").value];
-  return !!(act && (act.nom === "Armurerie" || act.nom === "Fleeca"));
+  return !!(act && act.nom === "Fleeca");
 }
 
 function renderEquipeCheckboxes() {
@@ -209,7 +222,7 @@ async function ajouterAction() {
   if (act.cat_variable && !document.getElementById("fProduitVar").value) { toast("Choisissez un produit.", true); return; }
 
   let participantsIds = [];
-  if (act.nom === "Armurerie" || act.nom === "Fleeca") {
+  if (act.nom === "Fleeca") {
     participantsIds = Array.from(document.querySelectorAll(".chkEquipe:checked")).map(c => c.value);
   }
 
@@ -239,7 +252,7 @@ async function ajouterAction() {
       const ref = db.ref(`stock/${act.cat_variable}/produits/${pid}/stock`);
       const snap = await ref.once("value");
       const current = Number(snap.val()) || 0;
-      const next = Math.max(0, current - qte);
+      const next = act.production ? current + qte : Math.max(0, current - qte);
       await ref.set(next);
       await db.ref("journal_stock/" + uid()).set({ date: entry.date, membre: m.prenom, action: act.nom, quantite: qte, produit: entry.produit_drogue, createdAt: Date.now() });
     }
@@ -249,13 +262,16 @@ async function ajouterAction() {
   }
 
   toast("Action enregistrée.");
+  logAudit("Action ajoutée", `${m.prenom} — ${act.nom} x${qte} (${resultat})`);
+  if (resultat === "Réussite") verifierQuotaEtAlerter(membreId);
   await renderTable();
   await chargerListes();
 }
 
 let ALL_ACTIONS = [];
 async function renderTable() {
-  const snap = await db.ref("actions/" + (ACTIVE_WEEK ? ACTIVE_WEEK.id : "x")).once("value");
+  const semaine = VIEW_WEEK || ACTIVE_WEEK;
+  const snap = await db.ref("actions/" + (semaine ? semaine.id : "x")).once("value");
   ALL_ACTIONS = entries(snap.val()).map(([id, a]) => ({ id, ...a })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
   const fm = document.getElementById("filtMembre").value;
@@ -315,7 +331,8 @@ async function modifierAction(id) {
     if (a.produit_drogue_id && ancienDef && ancienDef.cat_variable) {
       const ref = db.ref(`stock/${ancienDef.cat_variable}/produits/${a.produit_drogue_id}/stock`);
       const snap = await ref.once("value");
-      await ref.set((Number(snap.val()) || 0) + Number(a.quantite || 0));
+      const delta = ancienDef.production ? -Number(a.quantite || 0) : Number(a.quantite || 0);
+      await ref.set(Math.max(0, (Number(snap.val()) || 0) + delta));
     }
     if (ancienDef && ancienDef.recipe && ancienDef.recipe.length) {
       for (const item of ancienDef.recipe) {
@@ -331,7 +348,8 @@ async function modifierAction(id) {
     if (produitDrogueId && actionDef[1].cat_variable) {
       const ref = db.ref(`stock/${actionDef[1].cat_variable}/produits/${produitDrogueId}/stock`);
       const snap = await ref.once("value");
-      await ref.set(Math.max(0, (Number(snap.val()) || 0) - nouvelleQte));
+      const delta = actionDef[1].production ? nouvelleQte : -nouvelleQte;
+      await ref.set(Math.max(0, (Number(snap.val()) || 0) + delta));
     }
     if (actionDef[1].recipe && actionDef[1].recipe.length) {
       await deduireStock(actionDef[1], nouvelleQte);
@@ -348,16 +366,20 @@ async function modifierAction(id) {
   if (actionDef[0]) { update.action = actionDef[1].nom; update.action_id = actionDef[0]; }
   if (produitDrogueId) { update.produit_drogue = produitDrogue; update.produit_drogue_id = produitDrogueId; }
 
-  await db.ref("actions/" + ACTIVE_WEEK.id + "/" + id).update(update);
+  await db.ref("actions/" + (VIEW_WEEK || ACTIVE_WEEK).id + "/" + id).update(update);
   toast("Action modifiée, stock ajusté.");
+  logAudit("Action modifiée", `${a.prenom_membre} — ${update.action || a.action}`);
+  if (update.resultat === "Réussite") verifierQuotaEtAlerter(a.membre_id);
   await chargerListes();
   await renderTable();
 }
 
 async function supprimerAction(id) {
   if (!confirm("Supprimer cette action ? Le stock déjà déduit ne sera pas restauré automatiquement.")) return;
-  await db.ref("actions/" + ACTIVE_WEEK.id + "/" + id).remove();
+  const a = ALL_ACTIONS.find(x => x.id === id);
+  await db.ref("actions/" + (VIEW_WEEK || ACTIVE_WEEK).id + "/" + id).remove();
   toast("Action supprimée.");
+  logAudit("Action supprimée", a ? `${a.prenom_membre} — ${a.action}` : id);
   renderTable();
 }
 
@@ -367,7 +389,10 @@ async function supprimerAction(id) {
   if (!SESSION) return;
   ACTIVE_WEEK = await getActiveWeek();
   renderContent();
+  const lbl = document.getElementById("weekLabel");
+  if (lbl) lbl.textContent = ACTIVE_WEEK ? `Semaine active : ${ACTIVE_WEEK.nom}${ACTIVE_WEEK.bloquee ? " (bloquée — créez une nouvelle semaine dans Admin)" : ""}` : "Aucune semaine active — créez-en une dans Admin → Semaines pour pouvoir enregistrer des actions.";
   await chargerListes();
+  remplirFiltSemaine();
   await renderTable();
 
   db.ref("events_drogue").on("value", snap => {
