@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Admin — Klan Nostrad</title>
+<title>Admin — Kronen Krieg</title>
 <link rel="stylesheet" href="../css/style.css">
 </head>
 <body>
@@ -16,8 +16,8 @@
 <script src="../js/app.js"></script>
 <script>
 let SESSION;
-const TABS = ["semaines", "membres", "stock", "actions", "quotas", "grades", "visibilite", "permissions", "config"];
-const TAB_LABELS = { visibilite: "Visibilité" };
+const TABS = ["semaines", "membres", "stock", "actions", "quotas", "grades", "visibilite", "permissions", "config", "audit"];
+const TAB_LABELS = { visibilite: "Visibilité", audit: "Audit" };
 let currentTab = "semaines";
 
 function renderContent() {
@@ -46,6 +46,7 @@ async function loadTab(t) {
   if (t === "visibilite") return tabVisibilite(body);
   if (t === "permissions") return tabPermissions(body);
   if (t === "config") return tabConfig(body);
+  if (t === "audit") return tabAudit(body);
 }
 
 /* ===================== SEMAINES ===================== */
@@ -57,19 +58,21 @@ async function tabSemaines(body) {
       <div class="panel-head"><h2>Nouvelle semaine</h2></div>
       <div class="row"><input type="text" id="newSemaineNom" placeholder="Nom (ex: Semaine 2)">
       <button class="btn btn-primary" onclick="creerSemaine()">Créer</button></div>
+      <p class="small muted mt8">La semaine créée s'enchaîne automatiquement après la dernière semaine existante (7 jours, verrouillage le dimanche à 19h00). Laisse le nom vide pour un nom automatique.</p>
     </div>
     <div class="panel">
       <div class="panel-head"><h2>Semaines</h2></div>
-      <table><thead><tr><th>Nom</th><th>Statut</th><th>Créée le</th><th></th></tr></thead>
+      <table><thead><tr><th>Nom</th><th>Statut</th><th>Créée le</th><th>Verrouillage auto</th><th></th></tr></thead>
         <tbody>${list.length ? list.map(s => `
-          <tr><td>${s.nom}</td><td><span class="badge ${s.bloquee ? 'badge-fail' : 'badge-ok'}">${s.bloquee ? 'Bloquée' : 'Active'}</span></td>
+          <tr><td>${s.nom}</td><td><span class="badge ${s.bloquee ? 'badge-fail' : 'badge-ok'}">${s.bloquee ? 'Bloquée' : 'Actif'}</span></td>
           <td class="small muted">${s.createdAt ? new Date(s.createdAt).toLocaleString('fr-FR') : '-'}</td>
+          <td class="small muted">${s.verrouAt ? new Date(s.verrouAt).toLocaleString('fr-FR') : '—'}</td>
           <td>
             ${s.bloquee ? `<span class="btn btn-sm" onclick="toggleSemaine('${s.id}', false)">Débloquer</span>`
                         : `<span class="btn btn-sm btn-gold" onclick="bloquerSemaine('${s.id}','${s.nom}')">Bloquer + Résumé</span>`}
             <span class="btn btn-sm btn-danger" onclick="suppSemaine('${s.id}')">Suppr.</span>
           </td></tr>
-        `).join("") : '<tr class="empty-row"><td colspan="4">Aucune semaine</td></tr>'}</tbody></table>
+        `).join("") : '<tr class="empty-row"><td colspan="5">Aucune semaine</td></tr>'}</tbody></table>
     </div>
     <div class="panel" id="resumeWrap" style="display:none;">
       <div class="panel-head"><h2>Résumé de semaine</h2></div>
@@ -78,23 +81,50 @@ async function tabSemaines(body) {
     </div>
   `;
 }
+/* Crée la prochaine semaine, enchaînée après la dernière semaine existante
+   (peu importe si celle-ci est bloquée ou non). Évite les doublons de créneau
+   qui provoquaient un verrouillage instantané. */
 async function creerSemaine() {
-  const nom = document.getElementById("newSemaineNom").value.trim();
-  if (!nom) { toast("Nom requis.", true); return; }
-  await db.ref("semaines/" + uid()).set({ nom, bloquee: false, createdAt: Date.now() });
+  const saisie = document.getElementById("newSemaineNom").value.trim();
+  const snap = await db.ref("semaines").once("value");
+  const list = entries(snap.val()).map(([id, s]) => ({ id, ...s })).sort((a, b) => (b.debut || 0) - (a.debut || 0));
+  const derniere = list[0] || null;
+  const bounds = prochainesBornes(derniere);
+
+  const idxRef = db.ref("semaine_index/" + bounds.debut);
+  const existeSnap = await idxRef.once("value");
+  if (existeSnap.exists()) {
+    toast("Cette semaine existe déjà.", true);
+    loadTab("semaines");
+    return;
+  }
+
+  const nom = saisie || nomAutoSemaine(bounds.debut, bounds.fin);
+  const id = uid();
+  await db.ref("semaines/" + id).set({
+    nom, bloquee: false, createdAt: Date.now(),
+    debut: bounds.debut, fin: bounds.fin, verrouAt: bounds.verrouAt
+  });
+  await idxRef.set(id);
+  logAudit("Semaine créée", nom);
   toast("Semaine créée.");
   loadTab("semaines");
 }
 async function toggleSemaine(id, bloquee) {
   await db.ref("semaines/" + id).update({ bloquee, closedAt: bloquee ? Date.now() : null });
+  logAudit(bloquee ? "Semaine bloquée manuellement" : "Semaine débloquée", id);
   loadTab("semaines");
 }
 async function suppSemaine(id) {
   if (!confirm("Supprimer cette semaine et toutes ses actions ?")) return;
   await db.ref("semaines/" + id).remove();
   await db.ref("actions/" + id).remove();
+  logAudit("Semaine supprimée", id);
   loadTab("semaines");
 }
+/* Blocage manuel : verrouille la semaine, affiche le résumé, ET ouvre
+   automatiquement la semaine suivante (même comportement que le
+   verrouillage automatique de 19h00). */
 async function bloquerSemaine(id, nom) {
   const snap = await db.ref("actions/" + id).once("value");
   const actions = entries(snap.val()).map(([aid, a]) => a);
@@ -107,24 +137,40 @@ async function bloquerSemaine(id, nom) {
   const classement = Object.entries(parMembre).sort((a, b) => b[1] - a[1])
     .map(([p, n], i) => `${i + 1}. ${p} — ${n} action(s)`).join("\n");
 
-  const texte = `📋 RÉSUMÉ — ${nom} — Klan Nostrad\n` +
+  const texte = `📋 RÉSUMÉ — ${nom} — Kronen Krieg\n` +
     `Actions : ${actions.length} (✅ ${reussites} / ❌ ${echecs})\n` +
     `Gains sale : ${formatMoney(gainsSale)}\n` +
     `Gains propre : ${formatMoney(gainsPropre)}\n\n` +
     `Classement :\n${classement || "—"}`;
 
-  await db.ref("semaines/" + id).update({ bloquee: true, closedAt: Date.now() });
+  await db.ref("semaines/" + id).update({ bloquee: true, closedAt: Date.now(), resume: texte });
   document.getElementById("resumeWrap").style.display = "block";
   document.getElementById("resumeText").value = texte;
 
   const cfgSnap = await db.ref("config/discord_webhook_semaine").once("value");
   const webhook = cfgSnap.val();
   if (webhook) {
-    try {
-      await fetch(webhook, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: texte }) });
-      toast("Résumé envoyé sur Discord.");
-    } catch (e) { toast("Webhook configuré mais envoi impossible (CORS/URL).", true); }
+    await envoyerWebhookEmbed(webhook, {
+      title: `📋 RÉSUMÉ — ${nom}`,
+      color: KK_COLOR_STEEL,
+      thumbnail: { url: KK_LOGO_URL },
+      fields: [
+        { name: "Actions", value: `${actions.length} (✅ ${reussites} / ❌ ${echecs})`, inline: true },
+        { name: "Gains sale", value: formatMoney(gainsSale), inline: true },
+        { name: "Gains propre", value: formatMoney(gainsPropre), inline: true },
+        { name: "Classement", value: classement || "—" }
+      ]
+    });
+    toast("Résumé envoyé sur Discord.");
   }
+
+  // Ouvre immédiatement la semaine suivante (7 jours après le verrouillage prévu de celle-ci).
+  await majStatsEtBadges(id);
+  logAudit("Semaine bloquée", nom);
+  const semSnap = await db.ref("semaines/" + id).once("value");
+  const semaineBloquee = { id, ...semSnap.val() };
+  await creerSemaineSuivante(semaineBloquee);
+
   loadTab("semaines");
   document.getElementById("resumeWrap").style.display = "block";
   document.getElementById("resumeText").value = texte;
@@ -179,7 +225,7 @@ async function tabMembres(body) {
               <span class="btn btn-sm" title="Changer le mot de passe" onclick="changerPassMembre('${m.id}','${m.prenom}')">🔑</span>
               <span class="btn btn-sm" title="${m.role === 'admin' ? 'Retirer admin' : 'Passer admin'}" onclick="toggleAdmin('${m.id}', ${m.role !== 'admin'})">🛡️</span>
               <span class="btn btn-sm" title="${m.actif !== false ? 'Désactiver' : 'Activer'}" onclick="toggleActif('${m.id}', ${m.actif === false})">${m.actif !== false ? '⏸️' : '▶️'}</span>
-              ${m.id === 'tony_diaz' ? '' : `<span class="btn btn-sm btn-danger" title="Supprimer le membre" onclick="suppMembre('${m.id}')">🗑️</span>`}
+              ${m.role === 'admin' ? '' : `<span class="btn btn-sm btn-danger" title="Supprimer le membre" onclick="suppMembre('${m.id}')">🗑️</span>`}
             </td>
           </tr>
         `).join("") : '<tr class="empty-row"><td colspan="7">Aucun membre</td></tr>'}</tbody></table>
@@ -194,6 +240,7 @@ async function modifierMembre(id) {
     grade: document.getElementById("mEdGrade_" + id).value,
     quota: Number(document.getElementById("mEdQuota_" + id).value) || 0
   });
+  logAudit("Membre modifié", prenom);
   toast("Membre mis à jour.");
   loadTab("membres");
 }
@@ -203,6 +250,7 @@ async function changerPassMembre(id, prenom, requestId) {
   if (val.trim().length < 4) { toast("Mot de passe trop court.", true); return; }
   await db.ref("membres/" + id + "/mot_de_passe").set(val.trim());
   if (requestId) await db.ref("reset_requests/" + requestId).remove();
+  logAudit("Mot de passe changé", "pour " + prenom);
   toast("Mot de passe mis à jour.");
   if (requestId) loadTab("membres");
 }
@@ -213,6 +261,7 @@ async function ignorerDemande(reqId) {
 async function toggleAdmin(id, makeAdmin) {
   if (!confirm(makeAdmin ? "Donner le rôle admin à ce membre ?" : "Retirer le rôle admin à ce membre ?")) return;
   await db.ref("membres/" + id + "/role").set(makeAdmin ? "admin" : "membre");
+  logAudit(makeAdmin ? "Rôle admin donné" : "Rôle admin retiré", "id: " + id);
   toast("Rôle mis à jour.");
   loadTab("membres");
 }
@@ -225,11 +274,12 @@ async function ajouterMembre() {
     grade: document.getElementById("mGrade").value, role: document.getElementById("mRole").value,
     mot_de_passe: pass, actif: true, quota: Number(document.getElementById("mQuota").value) || 0
   });
+  logAudit("Membre ajouté", prenom);
   toast("Membre ajouté.");
   loadTab("membres");
 }
-async function toggleActif(id, val) { await db.ref("membres/" + id + "/actif").set(val); loadTab("membres"); }
-async function suppMembre(id) { if (confirm("Supprimer ce membre ?")) { await db.ref("membres/" + id).remove(); loadTab("membres"); } }
+async function toggleActif(id, val) { await db.ref("membres/" + id + "/actif").set(val); logAudit(val ? "Membre réactivé" : "Membre désactivé", id); loadTab("membres"); }
+async function suppMembre(id) { if (confirm("Supprimer ce membre ?")) { await db.ref("membres/" + id).remove(); logAudit("Membre supprimé", id); loadTab("membres"); } }
 
 /* ===================== STOCK ===================== */
 async function tabStock(body) {
@@ -309,10 +359,11 @@ async function creerCategorie() {
   const nom = document.getElementById("catNom").value.trim();
   if (!nom) { toast("Nom requis.", true); return; }
   await db.ref("stock/" + uid()).set({ nom, emoji: document.getElementById("catEmoji").value.trim() || "📦", produits: {} });
+  logAudit("Catégorie de stock créée", nom);
   toast("Catégorie créée.");
   loadTab("stock");
 }
-async function suppCategorie(id) { if (confirm("Supprimer cette catégorie et tous ses produits ?")) { await db.ref("stock/" + id).remove(); loadTab("stock"); } }
+async function suppCategorie(id) { if (confirm("Supprimer cette catégorie et tous ses produits ?")) { await db.ref("stock/" + id).remove(); logAudit("Catégorie de stock supprimée", id); loadTab("stock"); } }
 async function ajouterProduit(catId) {
   const nom = document.getElementById("pNom_" + catId).value.trim();
   if (!nom) { toast("Nom du produit requis.", true); return; }
@@ -322,6 +373,7 @@ async function ajouterProduit(catId) {
     stock: Number(document.getElementById("pStock_" + catId).value) || 0,
     seuil: Number(document.getElementById("pSeuil_" + catId).value) || 0
   });
+  logAudit("Produit ajouté", nom);
   toast("Produit ajouté.");
   loadTab("stock");
 }
@@ -334,10 +386,11 @@ async function modifierProduit(catId, pid) {
     stock: Number(document.getElementById(`edStock_${catId}_${pid}`).value) || 0,
     seuil: Number(document.getElementById(`edSeuil_${catId}_${pid}`).value) || 0
   });
+  logAudit("Produit modifié", nom);
   toast("Produit mis à jour.");
   loadTab("stock");
 }
-async function suppProduit(catId, pid) { if (confirm("Supprimer ce produit ?")) { await db.ref("stock/" + catId + "/produits/" + pid).remove(); loadTab("stock"); } }
+async function suppProduit(catId, pid) { if (confirm("Supprimer ce produit ?")) { await db.ref("stock/" + catId + "/produits/" + pid).remove(); logAudit("Produit supprimé", pid); loadTab("stock"); } }
 
 /* ===================== ACTIONS ===================== */
 async function tabActions(body) {
@@ -372,7 +425,12 @@ async function tabActions(body) {
       <div class="row mt8">
         <select id="aCatVariable"><option value="">— Ou : produit choisi au moment de l'action (ex: Vente de Drogue) —</option>${catOptions}</select>
       </div>
-      <p class="small muted mt8">Soit une recette fixe (toujours le même produit, ex: ATM → Boîtier de piratage), soit une catégorie « variable » où le membre choisit le produit exact en saisissant l'action (ex: Vente de Drogue → quelle drogue).</p>
+      <div class="row mt8">
+        <label class="small muted" style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+          <input type="checkbox" id="aProduction" style="width:auto;"> Cette action <b>ajoute</b> du stock au lieu d'en retirer (récolte/production, ex: Récolte de Champignons — au lieu d'une vente)
+        </label>
+      </div>
+      <p class="small muted mt8">Soit une recette fixe (toujours le même produit, ex: ATM → Boîtier de piratage), soit une catégorie « variable » où le membre choisit le produit exact en saisissant l'action (ex: Vente de Drogue → quelle drogue, ou Récolte de Champignons → quel champignon).</p>
       <button class="btn btn-primary mt16" onclick="creerAction()">Créer l'action</button>
     </div>
     <div class="panel">
@@ -386,7 +444,7 @@ async function tabActions(body) {
             return prod ? `${prod.nom} x${r.qty}` : "—";
           }).join(", ");
           return `<tr><td>${a.nom}</td><td>${formatMoney(a.montant_sale || 0)}</td><td>${formatMoney(a.montant_propre || 0)}</td>
-          <td class="small">${catVar ? `Produit choisi (${catVar.emoji || ""} ${catVar.nom})` : (recetteTxt || "—")}</td>
+          <td class="small">${catVar ? `Produit choisi (${catVar.emoji || ""} ${catVar.nom}) ${a.production ? '<span class="badge badge-ok">+ récolte</span>' : '<span class="badge">- vente</span>'}` : (recetteTxt || "—")}</td>
           <td><span class="btn btn-sm btn-danger" onclick="suppAction('${a.id}')">Suppr.</span></td></tr>`;
         }).join("") : '<tr class="empty-row"><td colspan="5">Aucune action définie</td></tr>'}</tbody></table>
     </div>
@@ -450,13 +508,15 @@ async function creerAction() {
     nom, montant_sale: Number(document.getElementById("aSale").value) || 0,
     montant_propre: Number(document.getElementById("aPropre").value) || 0,
     recipe: RECIPE_LINES,
-    cat_variable: document.getElementById("aCatVariable").value || null
+    cat_variable: document.getElementById("aCatVariable").value || null,
+    production: document.getElementById("aProduction").checked
   });
   RECIPE_LINES = [];
+  logAudit("Action créée", nom);
   toast("Action créée.");
   loadTab("actions");
 }
-async function suppAction(id) { if (confirm("Supprimer cette action ?")) { await db.ref("actions_dispo/" + id).remove(); loadTab("actions"); } }
+async function suppAction(id) { if (confirm("Supprimer cette action ?")) { await db.ref("actions_dispo/" + id).remove(); logAudit("Action supprimée", id); loadTab("actions"); } }
 
 /* ===================== QUOTAS ===================== */
 async function getActiveWeekAdmin() {
@@ -504,8 +564,7 @@ async function tabQuotas(body) {
   `;
 
   // une seule cible par catégorie "produit variable" (ex: Drogue), peu importe le produit exact vendu
-  const catIds = [...new Set(Object.values(actionsDispo).map(a => a.cat_variable).filter(Boolean))]
-    .filter(catId => (stock[catId] || {}).nom !== "Labo");
+  const catIds = [...new Set(Object.values(actionsDispo).map(a => a.cat_variable).filter(Boolean))];
   const wrap = document.getElementById("quotasProduitsAdminWrap");
   if (!catIds.length) {
     wrap.innerHTML = '<div class="panel"><p class="muted small">Aucune action avec produit variable (ex: Vente de Drogue) n\'est configurée dans l\'onglet Actions.</p></div>';
@@ -565,10 +624,11 @@ async function creerGrade() {
   const nom = document.getElementById("gNom").value.trim();
   if (!nom) { toast("Nom requis.", true); return; }
   await db.ref("grades/" + uid()).set({ nom, ordre: Number(document.getElementById("gOrdre").value) || 9 });
+  logAudit("Grade créé", nom);
   toast("Grade créé.");
   loadTab("grades");
 }
-async function suppGrade(id) { if (confirm("Supprimer ce grade ?")) { await db.ref("grades/" + id).remove(); loadTab("grades"); } }
+async function suppGrade(id) { if (confirm("Supprimer ce grade ?")) { await db.ref("grades/" + id).remove(); logAudit("Grade supprimé", id); loadTab("grades"); } }
 
 /* ===================== VISIBILITÉ (grade × page de suivi) ===================== */
 const VISIBILITE_PAGES = [
@@ -605,6 +665,7 @@ async function enregistrerVisibilite() {
   const update = {};
   grades.forEach(g => { update[g] = {}; VISIBILITE_PAGES.forEach(p => { update[g][p.page] = document.getElementById(`visi_${g}_${p.page}`).checked; }); });
   await db.ref("visibilite_grades").update(update);
+  logAudit("Visibilité modifiée");
   toast("Visibilité enregistrée.");
 }
 
@@ -637,6 +698,7 @@ async function enregistrerPermissions() {
   grades.forEach(g => { update[g] = {}; PAGES_DISPO.forEach(p => { update[g][p.page] = document.getElementById(`perm_${g}_${p.page}`).checked; }); });
   await db.ref("permissions").update(update);
   _permsCache = null;
+  logAudit("Permissions modifiées");
   toast("Permissions enregistrées.");
 }
 
@@ -653,6 +715,9 @@ async function tabConfig(body) {
       <div class="row">
         <div><label class="l">Taux de frais blanchiment (%)</label><input type="number" id="cfgTaux" value="${cfg.blanchiment_taux ?? 35}"></div>
         <div><label class="l">Webhook Discord — résumé de semaine (optionnel)</label><input type="text" id="cfgWebhook" value="${cfg.discord_webhook_semaine || ''}" placeholder="https://discord.com/api/webhooks/..."></div>
+      </div>
+      <div class="row mt8">
+        <div><label class="l">Webhook Discord — quotas atteints &amp; badges (optionnel)</label><input type="text" id="cfgWebhookQuota" value="${cfg.discord_webhook_quota || ''}" placeholder="https://discord.com/api/webhooks/..."></div>
       </div>
       <div class="row mt8">
         <div><label class="l">Taux de paye par défaut — Vente de Drogue (%)</label><input type="number" id="cfgTauxPayeDrogue" value="${cfg.taux_paye_drogue ?? 20}"></div>
@@ -707,6 +772,7 @@ async function saveTauxGrades() {
     if (a !== "") update[g].autres = Number(a);
   });
   await db.ref("config/taux_paye_grades").set(update);
+  logAudit("Taux de paye par grade modifiés");
   toast("Taux par grade enregistrés.");
 }
 async function creerEvent() {
@@ -718,11 +784,13 @@ async function creerEvent() {
   if (!debut || !fin) { toast("Remplis début et fin.", true); return; }
   if (new Date(fin) <= new Date(debut)) { toast("La fin doit être après le début.", true); return; }
   await db.ref("events_drogue/" + uid()).set({ debut: new Date(debut).getTime(), fin: new Date(fin).getTime(), taux, taux_actions, nom, createdAt: Date.now() });
+  logAudit("Event créé", nom || "sans nom");
   toast("Event créé.");
   loadTab("config");
 }
 async function supprimerEvent(id) {
   await db.ref("events_drogue/" + id).remove();
+  logAudit("Event supprimé", id);
   loadTab("config");
 }
 async function saveConfig() {
@@ -730,9 +798,28 @@ async function saveConfig() {
     blanchiment_taux: Number(document.getElementById("cfgTaux").value) || 35,
     taux_paye_drogue: Number(document.getElementById("cfgTauxPayeDrogue").value) || 0,
     taux_paye_autres: Number(document.getElementById("cfgTauxPayeAutres").value) || 0,
-    discord_webhook_semaine: document.getElementById("cfgWebhook").value.trim()
+    discord_webhook_semaine: document.getElementById("cfgWebhook").value.trim(),
+    discord_webhook_quota: document.getElementById("cfgWebhookQuota").value.trim()
   });
+  logAudit("Config modifiée", "Paramètres généraux / webhooks");
   toast("Configuration enregistrée.");
+}
+
+/* ===================== AUDIT ===================== */
+async function tabAudit(body) {
+  const snap = await db.ref("audit").limitToLast(200).once("value");
+  const list = entries(snap.val()).map(([id, a]) => ({ id, ...a })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  body.innerHTML = `
+    <div class="panel">
+      <div class="panel-head"><h2>Journal d'audit — 200 dernières actions</h2></div>
+      <p class="small muted">Trace qui a créé, modifié ou supprimé quoi (membres, semaines, stock, actions, config, permissions...). Les modifications de produits/quotas très fréquentes ne sont pas toutes détaillées pour rester lisible.</p>
+      <table><thead><tr><th>Date</th><th>Membre</th><th>Action</th><th>Détail</th></tr></thead>
+        <tbody>${list.length ? list.map(a => `
+          <tr><td class="small muted" style="white-space:nowrap;">${a.createdAt ? new Date(a.createdAt).toLocaleString('fr-FR') : '-'}</td>
+          <td>${a.membre || '?'}</td><td>${a.action}</td><td class="small muted">${a.details || ''}</td></tr>
+        `).join("") : '<tr class="empty-row"><td colspan="4">Aucune entrée pour le moment.</td></tr>'}</tbody></table>
+    </div>
+  `;
 }
 
 (async function () {
