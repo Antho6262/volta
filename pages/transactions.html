@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Transactions — Klan Nostrad</title>
+<title>Transactions — Volta</title>
 <link rel="stylesheet" href="../css/style.css">
 </head>
 <body>
@@ -71,23 +71,23 @@ function exporterTransactionsCSV() {
   a.click();
 }
 
-async function chargerProduits() {
-  const [snapS, snapM] = await Promise.all([db.ref("stock").once("value"), db.ref("membres").once("value")]);
-  STOCK = snapS.val() || {};
-  MEMBRES = snapM.val() || {};
-
+function renderProduitsMembresSelects() {
   const selM = document.getElementById("tMembre");
+  const prevM = selM.value;
+  selM.innerHTML = "";
   entries(MEMBRES).forEach(([id, m]) => {
     if (m.actif === false) return;
-    selM.appendChild(new Option(m.prenom + (m.nom ? " " + m.nom : ""), id, id === SESSION.id, id === SESSION.id));
+    selM.appendChild(new Option(m.prenom + (m.nom ? " " + m.nom : ""), id, id === SESSION.id, id === (prevM || SESSION.id)));
   });
 
   const sel = document.getElementById("tProduit");
+  const prevP = sel.value;
   sel.innerHTML = "";
   entries(STOCK).forEach(([catId, cat]) => entries(cat.produits).forEach(([pid, p]) =>
     sel.appendChild(new Option(`${cat.nom} — ${p.nom}`, catId + "::" + pid + "::" + (p.prix || 0)))
   ));
   if (!sel.options.length) sel.innerHTML = '<option value="">Aucun produit — créez le stock dans Admin</option>';
+  else if (prevP) sel.value = prevP;
   sel.onchange = () => { const parts = sel.value.split("::"); if (parts[2]) document.getElementById("tPrix").value = parts[2]; };
 }
 
@@ -128,12 +128,12 @@ async function ajouterTransaction() {
 
   toast("Transaction enregistrée.");
   document.getElementById("tGroupe").value = ""; document.getElementById("tTel").value = ""; document.getElementById("tNotes").value = "";
-  await chargerTransactions();
 }
 
-async function chargerTransactions() {
-  const snap = await db.ref("transactions").once("value");
-  const list = entries(snap.val()).map(([id, t]) => ({ id, ...t })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+let TRANSACTIONS_RAW = {};
+
+function renderTransactions() {
+  const list = entries(TRANSACTIONS_RAW).map(([id, t]) => ({ id, ...t })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   TRANSACTIONS_LIST = list;
   const canDelete = SESSION.role === "admin";
   document.getElementById("tblTransactions").innerHTML = list.length ? list.map(t => `
@@ -156,7 +156,6 @@ async function supprimerTransaction(id) {
   }
   await db.ref("transactions/" + id).remove();
   toast("Transaction supprimée et rollback effectué.");
-  chargerTransactions();
 }
 
 (async function () {
@@ -164,8 +163,9 @@ async function supprimerTransaction(id) {
   SESSION = await initShell("transactions", "Transactions");
   if (!SESSION) return;
   renderContent();
-  await chargerProduits();
-  await chargerTransactions();
+  db.ref("stock").on("value", snap => { STOCK = snap.val() || {}; renderProduitsMembresSelects(); });
+  db.ref("membres").on("value", snap => { MEMBRES = snap.val() || {}; renderProduitsMembresSelects(); });
+  db.ref("transactions").on("value", snap => { TRANSACTIONS_RAW = snap.val() || {}; renderTransactions(); });
 })();
 </script>
 </body>

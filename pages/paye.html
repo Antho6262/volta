@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Paye — Klan Nostrad</title>
+<title>Paye — Volta</title>
 <link rel="stylesheet" href="../css/style.css">
 </head>
 <body>
@@ -16,6 +16,8 @@
 <script src="../js/app.js"></script>
 <script>
 let SESSION, SEMAINES = [], SEMAINE_SEL = null, TAUX_DROGUE = 20, TAUX_AUTRES = 45, TAUX_BLANCHIMENT = 35;
+let RAW = { membres: {}, actions: {}, actionsDispo: {}, payes: {}, argentSale: {}, argentPropre: {}, visi: {}, events: {}, tauxGrades: {} };
+let CUR_WEEK_ID = null, ACTIONS_REF = null, PAYES_REF = null;
 
 function renderContent() {
   document.getElementById("content").innerHTML = `
@@ -39,46 +41,55 @@ function renderContent() {
   `;
 }
 
-async function chargerSemaines() {
-  const snap = await db.ref("semaines").once("value");
-  SEMAINES = entries(snap.val()).map(([id, s]) => ({ id, ...s })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+function renderSemainesSelect() {
+  SEMAINES = entries(RAW.semaines).map(([id, s]) => ({ id, ...s })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const sel = document.getElementById("selSemaine");
   sel.innerHTML = SEMAINES.map(s => `<option value="${s.id}">${s.nom}${s.bloquee ? " (bloquée)" : " (active)"}</option>`).join("");
-  SEMAINE_SEL = SEMAINES.find(s => s.bloquee) || SEMAINES[0] || null;
+  if (!SEMAINE_SEL || !SEMAINES.find(s => s.id === SEMAINE_SEL.id)) {
+    SEMAINE_SEL = SEMAINES.find(s => s.bloquee) || SEMAINES[0] || null;
+  } else {
+    SEMAINE_SEL = SEMAINES.find(s => s.id === SEMAINE_SEL.id);
+  }
   if (SEMAINE_SEL) sel.value = SEMAINE_SEL.id;
+  subscribeSemaine();
+}
+
+function subscribeSemaine() {
+  const newId = SEMAINE_SEL ? SEMAINE_SEL.id : null;
+  if (newId === CUR_WEEK_ID) { renderPaye(); return; }
+  if (ACTIONS_REF) ACTIONS_REF.off("value");
+  if (PAYES_REF) PAYES_REF.off("value");
+  CUR_WEEK_ID = newId;
+  RAW.actions = {}; RAW.payes = {};
+  if (CUR_WEEK_ID) {
+    ACTIONS_REF = db.ref("actions/" + CUR_WEEK_ID);
+    ACTIONS_REF.on("value", snap => { RAW.actions = snap.val() || {}; renderPaye(); });
+    PAYES_REF = db.ref("payes/" + CUR_WEEK_ID);
+    PAYES_REF.on("value", snap => { RAW.payes = snap.val() || {}; renderPaye(); });
+  } else {
+    ACTIONS_REF = null; PAYES_REF = null;
+    renderPaye();
+  }
 }
 
 function onSemaineChange() {
   const id = document.getElementById("selSemaine").value;
   SEMAINE_SEL = SEMAINES.find(s => s.id === id);
-  chargerPaye();
+  subscribeSemaine();
 }
 
-async function chargerPaye() {
+function renderPaye() {
   if (!SEMAINE_SEL) { document.getElementById("tblPaye").innerHTML = '<tr class="empty-row"><td colspan="7">Aucune semaine</td></tr>'; return; }
   const isAdmin = SESSION.role === "admin";
-  const debut = SEMAINE_SEL.createdAt || 0;
-  const fin = SEMAINE_SEL.closedAt || Date.now();
 
-  const [snapM, snapA, snapAD, snapP, snapSale, snapPropre, snapG, snapEv, snapCfg] = await Promise.all([
-    db.ref("membres").once("value"),
-    db.ref("actions/" + SEMAINE_SEL.id).once("value"),
-    db.ref("actions_dispo").once("value"),
-    db.ref("payes/" + SEMAINE_SEL.id).once("value"),
-    db.ref("argent/sale").once("value"),
-    db.ref("argent/propre").once("value"),
-    db.ref("visibilite_grades").once("value"),
-    db.ref("events_drogue").once("value"),
-    db.ref("config/taux_paye_grades").once("value")
-  ]);
-  const tauxGrades = snapCfg.val() || {};
-  const visi = snapG.val() || {};
+  const tauxGrades = RAW.tauxGrades;
+  const visi = RAW.visi;
   const gradesMasques = new Set(Object.keys(visi).filter(g => visi[g] && visi[g].paye === false));
-  const membres = entries(snapM.val()).map(([id, m]) => ({ id, ...m })).filter(m => m.actif !== false && !gradesMasques.has(m.grade));
-  const actions = entries(snapA.val()).map(([id, a]) => a);
-  const actionsDispo = snapAD.val() || {};
-  const payes = snapP.val() || {};
-  const events = entries(snapEv.val()).map(([id, e]) => e);
+  const membres = entries(RAW.membres).map(([id, m]) => ({ id, ...m })).filter(m => m.actif !== false && !gradesMasques.has(m.grade));
+  const actions = entries(RAW.actions).map(([id, a]) => a);
+  const actionsDispo = RAW.actionsDispo;
+  const payes = RAW.payes;
+  const events = entries(RAW.events).map(([id, e]) => e);
 
   function tauxDrogueForAction(a) {
     const ts = a.createdAt || 0;
@@ -98,7 +109,7 @@ async function chargerPaye() {
   }
 
   const calcSolde = v => entries(v).reduce((acc, [, l]) => acc + (l.type === "Sortie" ? -Number(l.montant || 0) : Number(l.montant || 0)), 0);
-  document.getElementById("soldePropreDisp").textContent = formatMoney(calcSolde(snapPropre.val()));
+  document.getElementById("soldePropreDisp").textContent = formatMoney(calcSolde(RAW.argentPropre));
 
   function partGains(membreId, a) {
     const totalPersonnes = 1 + (a.participants_ids ? a.participants_ids.length : 0);
@@ -158,7 +169,6 @@ async function payer(membreId, prenom, montantBase) {
   }
 
   toast("Paiement enregistré.");
-  chargerPaye();
 }
 
 (async function () {
@@ -171,8 +181,22 @@ async function payer(membreId, prenom, montantBase) {
   TAUX_AUTRES = cfg.taux_paye_autres ?? 45;
   TAUX_BLANCHIMENT = cfg.blanchiment_taux ?? 35;
   renderContent();
-  await chargerSemaines();
-  await chargerPaye();
+
+  db.ref("semaines").on("value", snap => { RAW.semaines = snap.val() || {}; renderSemainesSelect(); });
+  db.ref("membres").on("value", snap => { RAW.membres = snap.val() || {}; renderPaye(); });
+  db.ref("actions_dispo").on("value", snap => { RAW.actionsDispo = snap.val() || {}; renderPaye(); });
+  db.ref("argent/sale").on("value", snap => { RAW.argentSale = snap.val() || {}; renderPaye(); });
+  db.ref("argent/propre").on("value", snap => { RAW.argentPropre = snap.val() || {}; renderPaye(); });
+  db.ref("visibilite_grades").on("value", snap => { RAW.visi = snap.val() || {}; renderPaye(); });
+  db.ref("events_drogue").on("value", snap => { RAW.events = snap.val() || {}; renderPaye(); });
+  db.ref("config/taux_paye_grades").on("value", snap => { RAW.tauxGrades = snap.val() || {}; renderPaye(); });
+  db.ref("config").on("value", snap => {
+    const c = snap.val() || {};
+    TAUX_DROGUE = c.taux_paye_drogue ?? 20;
+    TAUX_AUTRES = c.taux_paye_autres ?? 45;
+    TAUX_BLANCHIMENT = c.blanchiment_taux ?? 35;
+    renderPaye();
+  });
 })();
 </script>
 </body>

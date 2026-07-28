@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Blanchiment — Klan Nostrad</title>
+<title>Blanchiment — Volta</title>
 <link rel="stylesheet" href="../css/style.css">
 </head>
 <body>
@@ -54,34 +54,31 @@ async function blanchir() {
   const frais = Math.round(montant * TAUX / 100);
   const propre = montant - frais;
   const date = todayISO();
+  const id = uid();
 
-  await db.ref("blanchiments/" + uid()).set({ date, description: desc, montant_sale: montant, montant_propre: propre, frais, responsable: SESSION.prenom, createdAt: Date.now() });
-  await db.ref("argent/sale/" + uid()).set({ date, description: desc, type: "Sortie", montant, responsable: SESSION.prenom, createdAt: Date.now() });
-  await db.ref("argent/propre/" + uid()).set({ date, description: desc + " (blanchi)", type: "Entrée", montant: propre, responsable: SESSION.prenom, createdAt: Date.now() });
+  await db.ref("blanchiments/" + id).set({ date, description: desc, montant_sale: montant, montant_propre: propre, frais, responsable: SESSION.prenom, createdAt: Date.now() });
+  await db.ref("argent/sale/" + id).set({ date, description: desc, type: "Sortie", montant, responsable: SESSION.prenom, createdAt: Date.now() });
+  await db.ref("argent/propre/" + id).set({ date, description: desc + " (blanchi)", type: "Entrée", montant: propre, responsable: SESSION.prenom, createdAt: Date.now() });
 
   toast("Blanchiment effectué : " + formatMoney(propre) + " récupérés.");
   document.getElementById("bDesc").value = ""; document.getElementById("bMontant").value = ""; calcApercu();
-  chargerHisto();
 }
 
-async function supprimerBlanchiment(id, montantSale, montantPropre, desc, date) {
+async function supprimerBlanchiment(id) {
   if (!confirm("Annuler ce blanchiment ? Les mouvements d'argent associés seront supprimés.")) return;
   await db.ref("blanchiments/" + id).remove();
-  // rollback argent : supprimer les lignes correspondantes
-  const [snapSale, snapPropre] = await Promise.all([db.ref("argent/sale").once("value"), db.ref("argent/propre").once("value")]);
-  entries(snapSale.val()).forEach(([k, l]) => { if (l.montant === montantSale && l.date === date) db.ref("argent/sale/" + k).remove(); });
-  entries(snapPropre.val()).forEach(([k, l]) => { if (l.montant === montantPropre && l.date === date) db.ref("argent/propre/" + k).remove(); });
+  await db.ref("argent/sale/" + id).remove();
+  await db.ref("argent/propre/" + id).remove();
   toast("Blanchiment annulé.");
-  chargerHisto();
 }
 
-async function chargerHisto() {
-  const snap = await db.ref("blanchiments").once("value");
-  const list = entries(snap.val()).map(([id, b]) => ({ id, ...b })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+let HISTO_BLANCHIMENTS = {};
+function renderHisto() {
+  const list = entries(HISTO_BLANCHIMENTS).map(([id, b]) => ({ id, ...b })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const isAdmin = SESSION.role === "admin";
   document.getElementById("tblHisto").innerHTML = list.length ? list.map(b => `
     <tr><td>${b.date}</td><td>${b.description}</td><td>${formatMoney(b.montant_sale)}</td><td class="muted">${formatMoney(b.frais)}</td><td class="mono" style="color:var(--gold)">${formatMoney(b.montant_propre)}</td><td>${b.responsable}</td>
-    ${isAdmin ? `<td><span class="btn btn-sm btn-danger" onclick="supprimerBlanchiment('${b.id}',${b.montant_sale},${b.montant_propre},'${b.description}','${b.date}')">Annuler</span></td>` : ""}
+    ${isAdmin ? `<td><span class="btn btn-sm btn-danger" onclick="supprimerBlanchiment('${b.id}')">Annuler</span></td>` : ""}
     </tr>
   `).join("") : `<tr class="empty-row"><td colspan="${isAdmin ? 7 : 6}">Aucun blanchiment</td></tr>`;
 }
@@ -94,7 +91,13 @@ async function chargerHisto() {
   TAUX = Number(snapCfg.val()) || 35;
   renderContent();
   document.getElementById("tauxLabel").textContent = TAUX;
-  await chargerHisto();
+  db.ref("blanchiments").on("value", snap => { HISTO_BLANCHIMENTS = snap.val() || {}; renderHisto(); });
+  db.ref("config/blanchiment_taux").on("value", snap => {
+    TAUX = Number(snap.val()) || 35;
+    const lbl = document.getElementById("tauxLabel");
+    if (lbl) lbl.textContent = TAUX;
+    calcApercu();
+  });
 })();
 </script>
 </body>

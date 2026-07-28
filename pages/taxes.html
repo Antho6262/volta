@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Taxes — Klan Nostrad</title>
+<title>Taxes — Volta</title>
 <link rel="stylesheet" href="../css/style.css">
 </head>
 <body>
@@ -66,22 +66,21 @@ async function creerTypeTaxe() {
   await db.ref("types_taxes/" + uid()).set({ nom, createdAt: Date.now() });
   document.getElementById("newTypeNom").value = "";
   toast("Type de taxe créé.");
-  await chargerTypes();
 }
 
-async function chargerTypes() {
-  const snap = await db.ref("types_taxes").once("value");
+function renderTypesSelect(types) {
   const sel = document.getElementById("xTaxe");
-  const list = entries(snap.val()).map(([id, t]) => ({ id, ...t }));
+  const prev = sel.value;
+  const list = entries(types).map(([id, t]) => ({ id, ...t }));
   sel.innerHTML = list.length ? list.map(t => `<option value="${t.id}">${t.nom}</option>`).join("") : '<option value="">Aucun type — créez-en un</option>';
+  if (prev) sel.value = prev;
 }
 
-async function chargerMembres() {
-  const snap = await db.ref("membres").once("value");
-  MEMBRES = snap.val() || {};
+function renderMembresSelect() {
   const sel = document.getElementById("xMembre");
+  const prev = sel.value;
   sel.innerHTML = "";
-  entries(MEMBRES).forEach(([id, m]) => { if (m.actif !== false) sel.appendChild(new Option(m.prenom, id, id === SESSION.id, id === SESSION.id)); });
+  entries(MEMBRES).forEach(([id, m]) => { if (m.actif !== false) sel.appendChild(new Option(m.prenom, id, id === SESSION.id, id === (prev || SESSION.id))); });
 }
 
 async function ajouterTaxe() {
@@ -106,12 +105,11 @@ async function ajouterTaxe() {
 
   toast("Taxe enregistrée.");
   document.getElementById("xGroupe").value = ""; document.getElementById("xMontant").value = ""; document.getElementById("xNotes").value = "";
-  chargerTaxes();
 }
 
-async function chargerTaxes() {
-  const snap = await db.ref("taxes").once("value");
-  const list = entries(snap.val()).map(([id, t]) => ({ id, ...t })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+let TAXES_RAW = {};
+function renderTaxes() {
+  const list = entries(TAXES_RAW).map(([id, t]) => ({ id, ...t })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const canDelete = SESSION.role === "admin";
   document.getElementById("tblTaxes").innerHTML = list.length ? list.map(t => `
     <tr><td>${t.date}</td><td>${t.groupe}</td><td>${t.taxe_nom}</td><td>${t.prenom_membre}</td><td>${formatMoney(t.montant)}</td><td>${t.type_argent}</td>
@@ -125,7 +123,6 @@ async function supprimerTaxe(id) {
   if (t) await db.ref(`argent/${t.type_argent}/${id}`).remove();
   await db.ref("taxes/" + id).remove();
   toast("Taxe supprimée, rollback effectué.");
-  chargerTaxes();
 }
 
 (async function () {
@@ -133,9 +130,9 @@ async function supprimerTaxe(id) {
   SESSION = await initShell("taxes", "Taxes");
   if (!SESSION) return;
   renderContent();
-  await chargerTypes();
-  await chargerMembres();
-  await chargerTaxes();
+  db.ref("types_taxes").on("value", snap => renderTypesSelect(snap.val() || {}));
+  db.ref("membres").on("value", snap => { MEMBRES = snap.val() || {}; renderMembresSelect(); });
+  db.ref("taxes").on("value", snap => { TAXES_RAW = snap.val() || {}; renderTaxes(); });
 })();
 </script>
 </body>

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Quotas — Klan Nostrad</title>
+<title>Quotas — Volta</title>
 <link rel="stylesheet" href="../css/style.css">
 </head>
 <body>
@@ -16,13 +16,8 @@
 <script src="../js/app.js"></script>
 <script>
 let SESSION;
-
-async function getActiveWeek() {
-  const snap = await db.ref("semaines").once("value");
-  const list = entries(snap.val()).map(([id, s]) => ({ id, ...s }));
-  list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  return list.find(s => s.bloquee !== true) || list[0] || null;
-}
+let DATA = { semaines: {}, membres: {}, visi: {}, actionsDispo: {}, stock: {}, quotasCategorie: {}, actions: {} };
+let ACTIVE_WEEK_ID = null, ACTIONS_REF = null;
 
 function renderContent() {
   document.getElementById("content").innerHTML = `
@@ -42,53 +37,35 @@ function barreHtml(pct) {
     <div style="height:100%; width:${Math.min(100, pct)}%; background:${pct >= 100 ? 'var(--success)' : 'var(--steel)'};"></div></div>`;
 }
 
-async function chargerQuotasProduits(membres, actions) {
-  const wrap = document.getElementById("quotasProduitsWrap");
-  const [snapA, snapS, snapQ] = await Promise.all([
-    db.ref("actions_dispo").once("value"), db.ref("stock").once("value"), db.ref("quotas_categorie").once("value")
-  ]);
-  const actionsDispo = snapA.val() || {};
-  const stock = snapS.val() || {};
-  const quotasCategorie = snapQ.val() || {};
-
-  const catIds = [...new Set(Object.values(actionsDispo).map(a => a.cat_variable).filter(Boolean))]
-    .filter(catId => (stock[catId] || {}).nom !== "Labo");
-  if (!catIds.length) { wrap.innerHTML = ""; return; }
-
-  wrap.innerHTML = catIds.map(catId => {
-    const cat = stock[catId];
-    if (!cat) return "";
-    const produitIds = new Set(Object.keys(cat.produits || {}));
-
-    return `<div class="panel">
-      <div class="panel-head"><h2>${cat.emoji || ""} Quota ${cat.nom} (toutes confondues)</h2></div>
-      <table>
-        <thead><tr><th>Membre</th><th>Cible</th><th>Réalisé</th><th>Progression</th></tr></thead>
-        <tbody>
-          ${membres.map(m => {
-            const quota = Number((quotasCategorie[m.id] || {})[catId]) || 0;
-            const fait = actions.filter(a => a.membre_id === m.id && produitIds.has(a.produit_drogue_id) && a.resultat === "Réussite")
-              .reduce((acc, a) => acc + Number(a.quantite || 0), 0);
-            const pct = quota > 0 ? Math.round(fait / quota * 100) : 0;
-            return `<tr><td>${m.prenom}</td><td>${quota}</td><td>${fait}</td><td>${barreHtml(pct)}</td></tr>`;
-          }).join("")}
-        </tbody>
-      </table>
-    </div>`;
-  }).join("");
+function recomputeWeek() {
+  const list = entries(DATA.semaines).map(([id, s]) => ({ id, ...s })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const week = list.find(s => s.bloquee !== true) || list[0] || null;
+  const newWeekId = week ? week.id : null;
+  if (newWeekId !== ACTIVE_WEEK_ID) {
+    if (ACTIONS_REF) ACTIONS_REF.off("value", onActionsChange);
+    ACTIVE_WEEK_ID = newWeekId;
+    DATA.actions = {};
+    if (ACTIVE_WEEK_ID) {
+      ACTIONS_REF = db.ref("actions/" + ACTIVE_WEEK_ID);
+      ACTIONS_REF.on("value", onActionsChange);
+    } else {
+      ACTIONS_REF = null;
+      renderDerived();
+    }
+    return;
+  }
+  renderDerived();
 }
 
-async function chargerQuotas() {
-  const week = await getActiveWeek();
-  const [snapM, snapA, snapG] = await Promise.all([
-    db.ref("membres").once("value"),
-    week ? db.ref("actions/" + week.id).once("value") : Promise.resolve({ val: () => null }),
-    db.ref("visibilite_grades").once("value")
-  ]);
-  const visi = snapG.val() || {};
-  const gradesMasques = new Set(Object.keys(visi).filter(g => visi[g] && visi[g].quotas === false));
-  const membres = entries(snapM.val()).map(([id, m]) => ({ id, ...m })).filter(m => m.actif !== false && !gradesMasques.has(m.grade));
-  const actions = entries(snapA.val()).map(([id, a]) => a);
+function onActionsChange(snap) {
+  DATA.actions = snap.val() || {};
+  renderDerived();
+}
+
+function renderDerived() {
+  const gradesMasques = new Set(Object.keys(DATA.visi).filter(g => DATA.visi[g] && DATA.visi[g].quotas === false));
+  const membres = entries(DATA.membres).map(([id, m]) => ({ id, ...m })).filter(m => m.actif !== false && !gradesMasques.has(m.grade));
+  const actions = entries(DATA.actions).map(([id, a]) => a);
 
   document.getElementById("tblQuotas").innerHTML = membres.length ? membres.map(m => {
     const fait = actions.filter(a => a.membre_id === m.id && a.resultat === "Réussite" && !a.produit_drogue_id).reduce((acc, a) => acc + Number(a.quantite || 0), 0);
@@ -106,7 +83,31 @@ async function chargerQuotas() {
     </tr>`;
   }).join("") : '<tr class="empty-row"><td colspan="4">Aucun membre</td></tr>';
 
-  await chargerQuotasProduits(membres, actions);
+  const wrap = document.getElementById("quotasProduitsWrap");
+  const catIds = [...new Set(Object.values(DATA.actionsDispo).map(a => a.cat_variable).filter(Boolean))]
+    .filter(catId => (DATA.stock[catId] || {}).nom !== "Labo");
+  if (!catIds.length) { wrap.innerHTML = ""; return; }
+
+  wrap.innerHTML = catIds.map(catId => {
+    const cat = DATA.stock[catId];
+    if (!cat) return "";
+    const produitIds = new Set(Object.keys(cat.produits || {}));
+    return `<div class="panel">
+      <div class="panel-head"><h2>${cat.emoji || ""} Quota ${cat.nom} (toutes confondues)</h2></div>
+      <table>
+        <thead><tr><th>Membre</th><th>Cible</th><th>Réalisé</th><th>Progression</th></tr></thead>
+        <tbody>
+          ${membres.map(m => {
+            const quota = Number((DATA.quotasCategorie[m.id] || {})[catId]) || 0;
+            const fait = actions.filter(a => a.membre_id === m.id && produitIds.has(a.produit_drogue_id) && a.resultat === "Réussite")
+              .reduce((acc, a) => acc + Number(a.quantite || 0), 0);
+            const pct = quota > 0 ? Math.round(fait / quota * 100) : 0;
+            return `<tr><td>${m.prenom}</td><td>${quota}</td><td>${fait}</td><td>${barreHtml(pct)}</td></tr>`;
+          }).join("")}
+        </tbody>
+      </table>
+    </div>`;
+  }).join("");
 }
 
 (async function () {
@@ -114,7 +115,13 @@ async function chargerQuotas() {
   SESSION = await initShell("quotas", "Quotas");
   if (!SESSION) return;
   renderContent();
-  await chargerQuotas();
+
+  db.ref("semaines").on("value", snap => { DATA.semaines = snap.val() || {}; recomputeWeek(); });
+  db.ref("membres").on("value", snap => { DATA.membres = snap.val() || {}; renderDerived(); });
+  db.ref("visibilite_grades").on("value", snap => { DATA.visi = snap.val() || {}; renderDerived(); });
+  db.ref("actions_dispo").on("value", snap => { DATA.actionsDispo = snap.val() || {}; renderDerived(); });
+  db.ref("stock").on("value", snap => { DATA.stock = snap.val() || {}; renderDerived(); });
+  db.ref("quotas_categorie").on("value", snap => { DATA.quotasCategorie = snap.val() || {}; renderDerived(); });
 })();
 </script>
 </body>
