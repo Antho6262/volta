@@ -15,7 +15,7 @@
 <script src="../js/firebase-config.js"></script>
 <script src="../js/app.js"></script>
 <script>
-let SESSION, MEMBRES = {};
+let SESSION, MEMBRES = {}, ARMES = {};
 
 const CATALOGUE_ARMES = [
   { nom: "M9A3", photo: "../img/armes/m9a3.png" },
@@ -68,14 +68,13 @@ function renderContent() {
   `;
 }
 
-async function chargerMembres() {
-  const snap = await db.ref("membres").once("value");
-  MEMBRES = snap.val() || {};
+function renderMembresSelect() {
   const sel = document.getElementById("wMembre");
+  const prevValue = sel.value;
   sel.innerHTML = "";
   entries(MEMBRES).forEach(([id, m]) => {
     if (m.actif === false) return;
-    sel.appendChild(new Option(m.prenom + (m.nom ? " " + m.nom : ""), id, id === SESSION.id, id === SESSION.id));
+    sel.appendChild(new Option(m.prenom + (m.nom ? " " + m.nom : ""), id, id === SESSION.id, id === (prevValue || SESSION.id)));
   });
 }
 
@@ -95,7 +94,6 @@ async function ajouterArme() {
   });
   toast("Arme enregistrée.");
   document.getElementById("wType").value = ""; document.getElementById("wSerie").value = "";
-  chargerArmes();
 }
 
 function photoPourArme(a) {
@@ -133,21 +131,18 @@ async function importerPhoto(id, input) {
   const dataUrl = await compresserImage(file);
   await db.ref("armurerie/" + id + "/photo_url").set(dataUrl);
   toast("Photo importée.");
-  chargerArmes();
 }
 
 async function assignerModele(id, nom) {
-  if (!nom) { await db.ref("armurerie/" + id + "/modele").set(null); chargerArmes(); return; }
+  if (!nom) { await db.ref("armurerie/" + id + "/modele").set(null); return; }
   const arme = CATALOGUE_ARMES.find(a => a.nom === nom);
   if (!arme) return;
   await db.ref("armurerie/" + id).update({ modele: nom, photo_url: arme.photo });
   toast("Modèle associé.");
-  chargerArmes();
 }
 
-async function chargerArmes() {
-  const snap = await db.ref("armurerie").once("value");
-  const list = entries(snap.val()).map(([id, a]) => ({ id, ...a })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+function renderArmes() {
+  const list = entries(ARMES).map(([id, a]) => ({ id, ...a })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const canDelete = SESSION.role === "admin";
   document.getElementById("tblArmes").innerHTML = list.length ? list.map(a => {
     const photo = photoPourArme(a);
@@ -173,7 +168,6 @@ async function supprimerArme(id) {
   if (!confirm("Supprimer cette arme ?")) return;
   await db.ref("armurerie/" + id).remove();
   toast("Arme supprimée.");
-  chargerArmes();
 }
 
 (async function () {
@@ -182,8 +176,8 @@ async function supprimerArme(id) {
   if (!SESSION) return;
   renderContent();
   remplirCatalogue();
-  await chargerMembres();
-  await chargerArmes();
+  db.ref("membres").on("value", snap => { MEMBRES = snap.val() || {}; renderMembresSelect(); renderArmes(); });
+  db.ref("armurerie").on("value", snap => { ARMES = snap.val() || {}; renderArmes(); });
 })();
 </script>
 </body>

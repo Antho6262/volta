@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Objectifs — Klan Nostrad</title>
+<title>Objectifs — Volta</title>
 <link rel="stylesheet" href="../css/style.css">
 </head>
 <body>
@@ -16,13 +16,6 @@
 <script src="../js/app.js"></script>
 <script>
 let SESSION;
-
-async function getActiveWeek() {
-  const snap = await db.ref("semaines").once("value");
-  const list = entries(snap.val()).map(([id, s]) => ({ id, ...s }));
-  list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  return list.find(s => s.bloquee !== true) || list[0] || null;
-}
 
 function barre(pct, color) {
   return `<div style="background:var(--bg-2); border-radius:6px; height:10px; overflow:hidden; flex:1;">
@@ -51,29 +44,50 @@ function renderContent() {
   `;
 }
 
-let WEEK = null, CIBLE_COLLECTIVE = 0;
-async function chargerObjectifs() {
-  WEEK = await getActiveWeek();
-  const [snapM, snapA, snapCfg, snapOM] = await Promise.all([
-    db.ref("membres").once("value"),
-    WEEK ? db.ref("actions/" + WEEK.id).once("value") : Promise.resolve({ val: () => null }),
-    db.ref("objectifs_config").once("value"),
-    db.ref("objectifs_membres").once("value")
-  ]);
-  const membres = entries(snapM.val()).map(([id, m]) => ({ id, ...m })).filter(m => m.actif !== false);
-  const actions = entries(snapA.val()).map(([id, a]) => a);
-  const cfg = snapCfg.val() || {};
-  CIBLE_COLLECTIVE = Number(Object.values(cfg)[0]?.cible) || 0;
+let DATA = { semaines: {}, membres: {}, objCfg: {}, objMembres: {}, actions: {} };
+let ACTIVE_WEEK_ID = null, ACTIONS_REF = null;
+
+function recomputeWeek() {
+  const list = entries(DATA.semaines).map(([id, s]) => ({ id, ...s })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const week = list.find(s => s.bloquee !== true) || list[0] || null;
+  const newId = week ? week.id : null;
+  if (newId !== ACTIVE_WEEK_ID) {
+    if (ACTIONS_REF) ACTIONS_REF.off("value", onActionsChange);
+    ACTIVE_WEEK_ID = newId;
+    DATA.actions = {};
+    if (ACTIVE_WEEK_ID) {
+      ACTIONS_REF = db.ref("actions/" + ACTIVE_WEEK_ID);
+      ACTIONS_REF.on("value", onActionsChange);
+    } else {
+      ACTIONS_REF = null;
+      renderDerived();
+    }
+    return;
+  }
+  renderDerived();
+}
+
+function onActionsChange(snap) {
+  DATA.actions = snap.val() || {};
+  renderDerived();
+}
+
+function renderDerived() {
+  const membres = entries(DATA.membres).map(([id, m]) => ({ id, ...m })).filter(m => m.actif !== false);
+  const actions = entries(DATA.actions).map(([id, a]) => a);
+  const cfg = DATA.objCfg;
+  const cibleCollective = Number(Object.values(cfg)[0]?.cible) || 0;
   const objCfgId = Object.keys(cfg)[0] || null;
   window._objCfgId = objCfgId;
 
   const gainsTotal = actions.reduce((acc, a) => acc + Number(a.gains_totaux || 0), 0);
-  const pctCollectif = CIBLE_COLLECTIVE > 0 ? Math.round(gainsTotal / CIBLE_COLLECTIVE * 100) : 0;
+  const pctCollectif = cibleCollective > 0 ? Math.round(gainsTotal / cibleCollective * 100) : 0;
   document.getElementById("barreCollective").innerHTML = barre(pctCollectif, pctCollectif >= 100 ? 'var(--success)' : 'var(--gold)') +
-    `<span class="small muted" style="white-space:nowrap;">${formatMoney(gainsTotal)} / ${formatMoney(CIBLE_COLLECTIVE)}</span>`;
-  if (document.getElementById("cibleCollective")) document.getElementById("cibleCollective").value = CIBLE_COLLECTIVE;
+    `<span class="small muted" style="white-space:nowrap;">${formatMoney(gainsTotal)} / ${formatMoney(cibleCollective)}</span>`;
+  const inputCible = document.getElementById("cibleCollective");
+  if (inputCible && document.activeElement !== inputCible) inputCible.value = cibleCollective;
 
-  const objMembres = snapOM.val() || {};
+  const objMembres = DATA.objMembres;
   document.getElementById("tblObjMembres").innerHTML = membres.length ? membres.map(m => {
     const objData = objMembres[m.id] || {};
     const objId = Object.keys(objData)[0];
@@ -94,13 +108,11 @@ async function majCibleCollective() {
   const id = window._objCfgId || uid();
   await db.ref("objectifs_config/" + id).set({ cible: val });
   toast("Cible collective enregistrée.");
-  chargerObjectifs();
 }
 async function majObjMembre(membreId, objId, val) {
   const id = objId || uid();
   await db.ref("objectifs_membres/" + membreId + "/" + id).set({ cible: Number(val) || 0 });
   toast("Objectif mis à jour.");
-  chargerObjectifs();
 }
 
 (async function () {
@@ -108,7 +120,10 @@ async function majObjMembre(membreId, objId, val) {
   SESSION = await initShell("objectifs", "Objectifs");
   if (!SESSION) return;
   renderContent();
-  await chargerObjectifs();
+  db.ref("semaines").on("value", snap => { DATA.semaines = snap.val() || {}; recomputeWeek(); });
+  db.ref("membres").on("value", snap => { DATA.membres = snap.val() || {}; renderDerived(); });
+  db.ref("objectifs_config").on("value", snap => { DATA.objCfg = snap.val() || {}; renderDerived(); });
+  db.ref("objectifs_membres").on("value", snap => { DATA.objMembres = snap.val() || {}; renderDerived(); });
 })();
 </script>
 </body>

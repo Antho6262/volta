@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Labo — Klan Nostrad</title>
+<title>Labo — Volta</title>
 <link rel="stylesheet" href="../css/style.css">
 </head>
 <body>
@@ -16,12 +16,84 @@
 <script src="../js/app.js"></script>
 <script>
 let SESSION, ACTIVE_WEEK = null, MEMBRES = {}, LABO_ACTION_ID = null, LABO_PRODUITS = {}, LABO_STOCK = {}, LABO_STOCK_COMMUN = {}, GRADES_MASQUES = new Set();
+let ALL_SEMAINES = [], ACTIVE_WEEK_ID = null, ACTIONS_REF = null;
 
-async function getActiveWeek() {
-  const snap = await db.ref("semaines").once("value");
-  const list = entries(snap.val()).map(([id, s]) => ({ id, ...s }));
-  list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  return list.find(s => s.bloquee !== true) || list[0] || null;
+let RAW = { membres: {}, stockLabo: {}, laboStock: {}, laboCommun: {}, visi: {}, actions: {} };
+
+function renderTout() {
+  MEMBRES = RAW.membres;
+  LABO_PRODUITS = (RAW.stockLabo || {}).produits || {};
+  LABO_STOCK = RAW.laboStock;
+  LABO_STOCK_COMMUN = RAW.laboCommun;
+  const visi = RAW.visi;
+  const gradesMasques = new Set(Object.keys(visi).filter(g => visi[g] && visi[g].labo === false));
+  GRADES_MASQUES = gradesMasques;
+
+  const wrapFM = document.getElementById("wrapFMembre"), filtM = document.getElementById("filtMembre"), selStockM = document.getElementById("selStockMembre");
+  const prevFM = document.getElementById("fMembre") ? document.getElementById("fMembre").value : null;
+  const prevFiltM = filtM.value, prevStockM = selStockM.value;
+  filtM.innerHTML = '<option value="">Tous les membres</option>'; selStockM.innerHTML = '<option value="">Tous les membres</option>';
+  if (SESSION.role === "admin") {
+    wrapFM.innerHTML = `<label class="l">Membre</label><select id="fMembre"></select>`;
+    const selM = document.getElementById("fMembre");
+    entries(MEMBRES).forEach(([id, m]) => {
+      if (m.actif === false || gradesMasques.has(m.grade)) return;
+      const label = m.prenom + (m.nom ? " " + m.nom : "");
+      selM.appendChild(new Option(label, id, id === SESSION.id, id === (prevFM || SESSION.id)));
+    });
+  } else {
+    wrapFM.innerHTML = `<label class="l">Membre</label><input type="text" value="${SESSION.prenom}" disabled>`;
+  }
+  entries(MEMBRES).forEach(([id, m]) => {
+    if (m.actif === false || gradesMasques.has(m.grade)) return;
+    const label = m.prenom + (m.nom ? " " + m.nom : "");
+    filtM.appendChild(new Option(label, id));
+    selStockM.appendChild(new Option(label, id, id === SESSION.id, id === (prevStockM || SESSION.id)));
+  });
+  if (prevFiltM) filtM.value = prevFiltM;
+
+  const selP = document.getElementById("fProduit");
+  const prevP = selP.value;
+  const prodEntries = Object.entries(LABO_PRODUITS);
+  const produitsFinaux = prodEntries.filter(([, p]) => p.recipe && p.recipe.length);
+  selP.innerHTML = produitsFinaux.length
+    ? produitsFinaux.map(([pid, p]) => `<option value="${pid}">${p.nom}</option>`).join("")
+    : '<option value="">Aucun produit avec recette — configure-en un dans le catalogue</option>';
+  if (prevP) selP.value = prevP;
+
+  afficherZoneIngredients();
+  afficherStock();
+  renderHistoriqueDepuisActions();
+}
+
+function renderHistoriqueDepuisActions() {
+  if (!ACTIVE_WEEK) { HISTORIQUE = []; renderHistorique(); return; }
+  const all = entries(RAW.actions).map(([id, a]) => ({ id, ...a }));
+  HISTORIQUE = all.filter(a => a.action_id === LABO_ACTION_ID).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  renderHistorique();
+}
+
+function majSemaines(snap) {
+  ALL_SEMAINES = entries(snap.val()).map(([id, s]) => ({ id, ...s })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  ACTIVE_WEEK = ALL_SEMAINES.find(s => s.bloquee !== true) || ALL_SEMAINES[0] || null;
+  const lbl = document.getElementById("weekLabel");
+  if (lbl) lbl.textContent = "Semaine active : " + (ACTIVE_WEEK ? ACTIVE_WEEK.nom : "—");
+
+  const newWeekId = ACTIVE_WEEK ? ACTIVE_WEEK.id : null;
+  if (newWeekId !== ACTIVE_WEEK_ID) {
+    if (ACTIONS_REF) ACTIONS_REF.off("value");
+    ACTIVE_WEEK_ID = newWeekId;
+    RAW.actions = {};
+    if (ACTIVE_WEEK_ID) {
+      ACTIONS_REF = db.ref("actions/" + ACTIVE_WEEK_ID);
+      ACTIONS_REF.on("value", snap2 => { RAW.actions = snap2.val() || {}; renderHistoriqueDepuisActions(); });
+    } else {
+      ACTIONS_REF = null;
+      renderHistoriqueDepuisActions();
+    }
+  } else {
+    renderHistoriqueDepuisActions();
+  }
 }
 
 // Crée la catégorie de stock "Labo" et l'action "Labo" si elles n'existent pas encore
@@ -115,13 +187,11 @@ async function ajouterProduit() {
   document.getElementById("nouveauProduit").value = "";
   RECETTE_EN_COURS = [];
   document.getElementById("recetteEnCours").textContent = "Aucune ligne de recette en cours.";
-  await chargerListes();
 }
 
 async function supprimerProduit(pid) {
   if (!confirm("Supprimer ce produit du catalogue Labo ?")) return;
   await db.ref("stock/labo_cat/produits/" + pid).remove();
-  await chargerListes();
 }
 
 async function ajouterIngredient(pid) {
@@ -134,7 +204,6 @@ async function ajouterIngredient(pid) {
   await ref.set(current + qte);
   input.value = 1;
   toast("Ajouté au stock commun.");
-  await chargerTout();
 }
 
 function afficherZoneIngredients() {
@@ -189,7 +258,6 @@ async function ajouterProduction() {
   document.getElementById("fQte").value = 1;
   document.getElementById("fResultat").value = "Réussite";
   toggleRaison();
-  await chargerTout();
 }
 
 async function afficherStock() {
@@ -228,7 +296,6 @@ async function supprimerProduction(semaineId, id, membreId, pid, qte, resultat) 
   }
   await db.ref("actions/" + semaineId + "/" + id).remove();
   toast("Production supprimée.");
-  await chargerTout();
 }
 
 function renderHistorique() {
@@ -249,72 +316,19 @@ function renderHistorique() {
 
 let HISTORIQUE = [];
 
-async function chargerListes() {
-  const [snapM, snapStock, snapLaboStock, snapLaboCommun, snapG] = await Promise.all([
-    db.ref("membres").once("value"), db.ref("stock/labo_cat").once("value"), db.ref("labo_stock").once("value"), db.ref("labo_stock_commun").once("value"), db.ref("visibilite_grades").once("value")
-  ]);
-  MEMBRES = snapM.val() || {};
-  LABO_PRODUITS = (snapStock.val() || {}).produits || {};
-  LABO_STOCK = snapLaboStock.val() || {};
-  LABO_STOCK_COMMUN = snapLaboCommun.val() || {};
-  const visi = snapG.val() || {};
-  const gradesMasques = new Set(Object.keys(visi).filter(g => visi[g] && visi[g].labo === false));
-  GRADES_MASQUES = gradesMasques;
-
-  const wrapFM = document.getElementById("wrapFMembre"), filtM = document.getElementById("filtMembre"), selStockM = document.getElementById("selStockMembre");
-  filtM.innerHTML = '<option value="">Tous les membres</option>'; selStockM.innerHTML = '<option value="">Tous les membres</option>';
-  if (SESSION.role === "admin") {
-    wrapFM.innerHTML = `<label class="l">Membre</label><select id="fMembre"></select>`;
-    const selM = document.getElementById("fMembre");
-    entries(MEMBRES).forEach(([id, m]) => {
-      if (m.actif === false || gradesMasques.has(m.grade)) return;
-      const label = m.prenom + (m.nom ? " " + m.nom : "");
-      selM.appendChild(new Option(label, id, id === SESSION.id, id === SESSION.id));
-    });
-  } else {
-    wrapFM.innerHTML = `<label class="l">Membre</label><input type="text" value="${SESSION.prenom}" disabled>`;
-  }
-  entries(MEMBRES).forEach(([id, m]) => {
-    if (m.actif === false || gradesMasques.has(m.grade)) return;
-    const label = m.prenom + (m.nom ? " " + m.nom : "");
-    filtM.appendChild(new Option(label, id));
-    selStockM.appendChild(new Option(label, id, id === SESSION.id, id === SESSION.id));
-  });
-
-  const selP = document.getElementById("fProduit");
-  const prodEntries = Object.entries(LABO_PRODUITS);
-  const produitsFinaux = prodEntries.filter(([, p]) => p.recipe && p.recipe.length);
-  selP.innerHTML = produitsFinaux.length
-    ? produitsFinaux.map(([pid, p]) => `<option value="${pid}">${p.nom}</option>`).join("")
-    : '<option value="">Aucun produit avec recette — configure-en un dans le catalogue</option>';
-
-  afficherZoneIngredients();
-
-  afficherStock();
-}
-
-async function chargerHistorique() {
-  if (!ACTIVE_WEEK) { HISTORIQUE = []; renderHistorique(); return; }
-  const snap = await db.ref("actions/" + ACTIVE_WEEK.id).once("value");
-  const all = entries(snap.val()).map(([id, a]) => ({ id, ...a }));
-  HISTORIQUE = all.filter(a => a.action_id === LABO_ACTION_ID).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  renderHistorique();
-}
-
-async function chargerTout() {
-  await chargerListes();
-  await chargerHistorique();
-}
-
 (async function () {
   await authReady;
   SESSION = await initShell("labo", "Labo");
   if (!SESSION) return;
   await bootstrap();
-  ACTIVE_WEEK = await getActiveWeek();
   renderContent();
-  document.getElementById("weekLabel").textContent = "Semaine active : " + (ACTIVE_WEEK ? ACTIVE_WEEK.nom : "—");
-  await chargerTout();
+
+  db.ref("semaines").on("value", majSemaines);
+  db.ref("membres").on("value", snap => { RAW.membres = snap.val() || {}; renderTout(); });
+  db.ref("stock/labo_cat").on("value", snap => { RAW.stockLabo = snap.val() || {}; renderTout(); });
+  db.ref("labo_stock").on("value", snap => { RAW.laboStock = snap.val() || {}; renderTout(); });
+  db.ref("labo_stock_commun").on("value", snap => { RAW.laboCommun = snap.val() || {}; renderTout(); });
+  db.ref("visibilite_grades").on("value", snap => { RAW.visi = snap.val() || {}; renderTout(); });
 })();
 </script>
 </body>
