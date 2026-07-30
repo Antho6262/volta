@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fourrière — Volta</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+<div id="shell"></div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="../js/firebase-config.js"></script>
+<script src="../js/app.js"></script>
+<script>
+let SESSION;
+let ACTIVE_WEEK_ID = null, ACTIONS_REF = null;
+let DATA = { semaines: {}, membres: {}, mouvements: {} };
+
+function renderContent() {
+  document.getElementById("content").innerHTML = `
+    <h1>Fourrière</h1>
+    <div class="sigil-rule"></div>
+    <p class="muted small" id="weekLabel">Semaine active : —</p>
+
+    <div class="panel mt16">
+      <div class="panel-head"><h2>Nouveau mouvement</h2></div>
+      <div class="row">
+        <div><label class="l">Membre</label><select id="fMembre"></select></div>
+        <div><label class="l">Mouvement</label><select id="fType">
+          <option value="sortie">🚗 Sortie de véhicule (+1)</option>
+          <option value="rangement">🅿️ Rangement de véhicule (−1)</option>
+        </select></div>
+        <div><label class="l">Notes</label><input type="text" id="fNotes" placeholder="Optionnel"></div>
+        <div style="display:flex;align-items:flex-end;"><button class="btn btn-primary" style="width:100%" onclick="ajouterMouvement()">Enregistrer</button></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>Score — semaine active</h2></div>
+      <table><thead><tr><th>Membre</th><th>Sorties</th><th>Rangements</th><th>Score</th></tr></thead>
+        <tbody id="tblScore"><tr class="empty-row"><td colspan="4">Chargement…</td></tr></tbody></table>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>Historique — semaine active</h2>
+        <select id="filtLimite" onchange="renderHistorique()"><option value="10">Afficher 10</option><option value="30">Afficher 30</option><option value="50">Afficher 50</option><option value="9999">Tout afficher</option></select>
+      </div>
+      <table><thead><tr><th>Date</th><th>Membre</th><th>Mouvement</th><th>Notes</th><th></th></tr></thead>
+        <tbody id="tblHistorique"><tr class="empty-row"><td colspan="5">Chargement…</td></tr></tbody></table>
+    </div>
+  `;
+}
+
+function renderMembresSelect() {
+  const sel = document.getElementById("fMembre");
+  const prev = sel.value;
+  sel.innerHTML = "";
+  entries(DATA.membres).forEach(([id, m]) => {
+    if (m.actif === false) return;
+    sel.appendChild(new Option(m.prenom + (m.nom ? " " + m.nom : ""), id, id === SESSION.id, id === (prev || SESSION.id)));
+  });
+}
+
+function recompute() {
+  const list = entries(DATA.semaines).map(([id, s]) => ({ id, ...s })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const week = list.find(s => s.bloquee !== true) || list[0] || null;
+  const lbl = document.getElementById("weekLabel");
+  if (lbl) lbl.textContent = "Semaine active : " + (week ? week.nom : "Aucune semaine") + (week && week.bloquee ? " (bloquée)" : "");
+
+  const newWeekId = week ? week.id : null;
+  if (newWeekId !== ACTIVE_WEEK_ID) {
+    if (ACTIONS_REF) ACTIONS_REF.off("value");
+    ACTIVE_WEEK_ID = newWeekId;
+    DATA.mouvements = {};
+    if (ACTIVE_WEEK_ID) {
+      ACTIONS_REF = db.ref("fourriere/" + ACTIVE_WEEK_ID);
+      ACTIONS_REF.on("value", snap => { DATA.mouvements = snap.val() || {}; renderDerived(); });
+    } else {
+      ACTIONS_REF = null;
+      renderDerived();
+    }
+    return;
+  }
+  renderDerived();
+}
+
+function renderDerived() {
+  const membres = entries(DATA.membres).map(([id, m]) => ({ id, ...m })).filter(m => m.actif !== false);
+  const mouvements = entries(DATA.mouvements).map(([id, m]) => ({ id, ...m }));
+
+  document.getElementById("tblScore").innerHTML = membres.length ? membres.map(m => {
+    const mesMouv = mouvements.filter(mv => mv.membre_id === m.id);
+    const sorties = mesMouv.filter(mv => mv.type === "sortie").length;
+    const rangements = mesMouv.filter(mv => mv.type === "rangement").length;
+    const score = sorties - rangements;
+    return `<tr><td>${m.prenom} ${m.nom || ""}</td><td>${sorties}</td><td>${rangements}</td>
+      <td class="mono" style="color:${score > 0 ? 'var(--success)' : score < 0 ? 'var(--danger)' : 'inherit'}">${score > 0 ? "+" : ""}${score}</td></tr>`;
+  }).join("") : '<tr class="empty-row"><td colspan="4">Aucun membre</td></tr>';
+
+  renderHistorique();
+}
+
+function renderHistorique() {
+  const limite = Number(document.getElementById("filtLimite")?.value) || 10;
+  const canDelete = SESSION.role === "admin";
+  const list = entries(DATA.mouvements).map(([id, m]) => ({ id, ...m })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, limite);
+  document.getElementById("tblHistorique").innerHTML = list.length ? list.map(m => `
+    <tr><td>${m.date}</td><td>${m.prenom_membre}</td>
+    <td><span class="badge ${m.type === 'sortie' ? 'badge-warn' : 'badge-ok'}">${m.type === 'sortie' ? '🚗 Sortie' : '🅿️ Rangement'}</span></td>
+    <td>${m.notes || ""}</td>
+    <td>${canDelete ? `<span class="btn btn-sm btn-danger" onclick="supprimerMouvement('${m.id}')">Suppr.</span>` : ""}</td></tr>
+  `).join("") : '<tr class="empty-row"><td colspan="5">Aucun mouvement</td></tr>';
+}
+
+async function ajouterMouvement() {
+  if (!ACTIVE_WEEK_ID) { toast("Aucune semaine active.", true); return; }
+  const membreId = document.getElementById("fMembre").value;
+  const type = document.getElementById("fType").value;
+  const notes = document.getElementById("fNotes").value.trim();
+  if (!membreId) { toast("Sélectionnez un membre.", true); return; }
+  const m = DATA.membres[membreId] || {};
+
+  await db.ref("fourriere/" + ACTIVE_WEEK_ID + "/" + uid()).set({
+    membre_id: membreId, prenom_membre: m.prenom || "", nom_membre: m.nom || "",
+    type, notes, date: todayISO(), par: SESSION.prenom, createdAt: Date.now()
+  });
+  toast(type === "sortie" ? "Sortie enregistrée." : "Rangement enregistré.");
+  document.getElementById("fNotes").value = "";
+}
+
+async function supprimerMouvement(id) {
+  if (!ACTIVE_WEEK_ID) return;
+  if (!confirm("Supprimer ce mouvement ?")) return;
+  await db.ref("fourriere/" + ACTIVE_WEEK_ID + "/" + id).remove();
+  toast("Mouvement supprimé.");
+}
+
+(async function () {
+  await authReady;
+  SESSION = await initShell("fourriere", "Fourrière");
+  if (!SESSION) return;
+  renderContent();
+
+  db.ref("semaines").on("value", snap => { DATA.semaines = snap.val() || {}; recompute(); });
+  db.ref("membres").on("value", snap => { DATA.membres = snap.val() || {}; renderMembresSelect(); renderDerived(); });
+})();
+</script>
+</body>
+</html>
