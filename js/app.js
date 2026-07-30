@@ -7,6 +7,7 @@ const NAV_ITEMS = [
   { page: "dashboard",    icon: "🏠", label: "Dashboard",    file: "dashboard.html" },
   { page: "tracker",      icon: "📋", label: "Tracker",      file: "tracker.html" },
   { page: "armurerie",    icon: "🔫", label: "Armurerie",    file: "armurerie.html" },
+  { page: "fourriere",    icon: "🚗", label: "Fourrière",    file: "fourriere.html" },
   { page: "stats",        icon: "📊", label: "Stats",        file: "stats.html" },
   { page: "stock",        icon: "📦", label: "Stock",        file: "stock.html" },
   { page: "quotas",       icon: "🎯", label: "Quotas",       file: "quotas.html" },
@@ -59,6 +60,7 @@ async function initShell(activePage, pageTitle) {
         <nav class="nav">${navHtml}</nav>
         <div class="sidebar-foot">
           <div class="who"><b>${session.prenom} ${session.nom || ""}</b><span class="grade">${session.grade || ""}</span></div>
+          <div id="rtStatus" class="small muted" style="margin:6px 0;">🔄 Connexion…</div>
           <span class="logout-link" onclick="logout()">Se déconnecter</span>
         </div>
       </aside>
@@ -72,5 +74,14 @@ async function initShell(activePage, pageTitle) {
     </div>
   `;
   document.getElementById("shell").outerHTML = shellHtml;
+
+  // Indicateur temps réel : reflète l'état réel de la connexion Firebase
+  // (se met à jour tout seul si la connexion tombe ou revient).
+  db.ref(".info/connected").on("value", snap => {
+    const el = document.getElementById("rtStatus");
+    if (!el) return;
+    el.textContent = snap.val() === true ? "🟢 Temps réel actif" : "🔴 Connexion perdue…";
+  });
+
   return session;
 }
