@@ -39,6 +39,14 @@ function renderContent() {
     </div>
 
     <div class="panel">
+      <div class="panel-head"><h2>📋 Import depuis Discord (copier-coller)</h2></div>
+      <p class="small muted">Sélectionne et copie les messages du bot dans le salon Discord, colle-les ci-dessous, puis clique sur "Analyser". Tu pourras vérifier avant de valider.</p>
+      <textarea id="fDiscordPaste" rows="8" style="width:100%; font-family:monospace; font-size:13px;" placeholder="Colle ici les messages Discord (ex: Diego Mora a rangé un(e) gbarcherpro2 dans le garage 173947: CW0071XI)"></textarea>
+      <button class="btn btn-sm mt8" onclick="analyserCollage()">Analyser</button>
+      <div id="apercuImport" class="mt16"></div>
+    </div>
+
+    <div class="panel">
       <div class="panel-head"><h2>Score — semaine active</h2></div>
       <table><thead><tr><th>Membre</th><th>Sorties</th><th>Rangements</th><th>Score</th></tr></thead>
         <tbody id="tblScore"><tr class="empty-row"><td colspan="4">Chargement…</td></tr></tbody></table>
@@ -136,6 +144,85 @@ async function supprimerMouvement(id) {
   if (!confirm("Supprimer ce mouvement ?")) return;
   await db.ref("fourriere/" + ACTIVE_WEEK_ID + "/" + id).remove();
   toast("Mouvement supprimé.");
+}
+
+// Capture : nom complet, action (rangé/sorti), modèle du véhicule, plaque
+const REGEX_MOUVEMENT = /(.+?) a (rangé|sorti) un\(e\) (\S+) (?:dans le garage \d+|du garage \d+|de la fourrière)\s*:\s*(\S+)/i;
+
+function trouverMembreParNom(nomComplet) {
+  const cible = nomComplet.trim().toLowerCase();
+  const membres = entries(DATA.membres).map(([id, m]) => ({ id, ...m }));
+  let m = membres.find(m => `${m.prenom || ""} ${m.nom || ""}`.trim().toLowerCase() === cible);
+  if (m) return m;
+  const parPrenom = membres.filter(m => (m.prenom || "").trim().toLowerCase() === cible.split(" ")[0]);
+  if (parPrenom.length === 1) return parPrenom[0];
+  return null;
+}
+
+let IMPORT_PARSE = [];
+
+function analyserCollage() {
+  const texte = document.getElementById("fDiscordPaste").value;
+  const lignes = texte.split("\n").map(l => l.trim()).filter(Boolean);
+  IMPORT_PARSE = [];
+
+  lignes.forEach(ligne => {
+    const match = ligne.match(REGEX_MOUVEMENT);
+    if (!match) return;
+    const [, nomComplet, actionMot, modele, plaque] = match;
+    const membre = trouverMembreParNom(nomComplet);
+    const type = actionMot.toLowerCase() === "sorti" ? "sortie" : "rangement";
+    IMPORT_PARSE.push({ nomComplet, membreId: membre ? membre.id : null, type, modele, plaque });
+  });
+
+  renderApercuImport();
+}
+
+function renderApercuImport() {
+  const wrap = document.getElementById("apercuImport");
+  if (!IMPORT_PARSE.length) { wrap.innerHTML = '<p class="muted small">Aucun mouvement reconnu dans le texte collé.</p>'; return; }
+
+  const optionsMembres = entries(DATA.membres).filter(([, m]) => m.actif !== false)
+    .map(([id, m]) => `<option value="${id}">${m.prenom} ${m.nom || ""}</option>`).join("");
+
+  wrap.innerHTML = `
+    <table><thead><tr><th>Membre détecté</th><th>Mouvement</th><th>Véhicule</th><th>Plaque</th></tr></thead>
+    <tbody>
+      ${IMPORT_PARSE.map((it, i) => `
+        <tr>
+          <td>${it.membreId
+            ? `${DATA.membres[it.membreId].prenom} ${DATA.membres[it.membreId].nom || ""}`
+            : `<select onchange="IMPORT_PARSE[${i}].membreId = this.value" style="border-color:var(--danger)">
+                <option value="">⚠️ "${it.nomComplet}" — choisir manuellement</option>${optionsMembres}
+              </select>`}
+          </td>
+          <td>${it.type === "sortie" ? "🚗 Sortie" : "🅿️ Rangement"}</td>
+          <td>${it.modele}</td>
+          <td>${it.plaque}</td>
+        </tr>
+      `).join("")}
+    </tbody></table>
+    <button class="btn btn-primary mt16" onclick="validerImport()">✅ Valider et enregistrer les ${IMPORT_PARSE.length} mouvement(s)</button>
+  `;
+}
+
+async function validerImport() {
+  if (!ACTIVE_WEEK_ID) { toast("Aucune semaine active.", true); return; }
+  const sansMembre = IMPORT_PARSE.filter(it => !it.membreId);
+  if (sansMembre.length) { toast("Choisis un membre pour chaque ligne signalée en rouge.", true); return; }
+
+  for (const it of IMPORT_PARSE) {
+    const m = DATA.membres[it.membreId] || {};
+    await db.ref("fourriere/" + ACTIVE_WEEK_ID + "/" + uid()).set({
+      membre_id: it.membreId, prenom_membre: m.prenom || "", nom_membre: m.nom || "",
+      type: it.type, notes: `${it.modele} — ${it.plaque} (import Discord)`,
+      date: todayISO(), par: SESSION.prenom + " (import)", createdAt: Date.now()
+    });
+  }
+  toast(`${IMPORT_PARSE.length} mouvement(s) importé(s).`);
+  document.getElementById("fDiscordPaste").value = "";
+  document.getElementById("apercuImport").innerHTML = "";
+  IMPORT_PARSE = [];
 }
 
 (async function () {
