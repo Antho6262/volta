@@ -16,7 +16,7 @@ jobs:
           node-version: "20"
 
       - name: Installer firebase-admin
-        run: npm install firebase-admin
+        run: npm install firebase-admin @firebase/app
 
       - name: Vérifier / créer la semaine active
         env:
