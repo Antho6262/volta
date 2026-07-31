@@ -118,6 +118,7 @@ async function main() {
   let action = null; // "created" | "closed_and_created" | null
 
   const result = await semainesRef.transaction((current) => {
+    action = null; // reset à CHAQUE tentative — une transaction peut réessayer plusieurs fois
     const semaines = current || {};
     const list = Object.entries(semaines).map(([id, s]) => ({ id, ...s }));
     const active = list.find((s) => s.bloquee !== true);
