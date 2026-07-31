@@ -107,6 +107,13 @@ async function main() {
   const paris = parisNow();
   const shouldCloseSchedule = paris.day === 0 && paris.hour === 19 && paris.minute < 10;
 
+  // DIAGNOSTIC : montre exactement ce que le robot voit avant toute action.
+  const diagSnap = await db.ref("semaines").once("value");
+  const diagVal = diagSnap.val();
+  console.log("🔍 Diagnostic — projectId utilisé :", serviceAccount.project_id);
+  console.log("🔍 Diagnostic — databaseURL utilisée :", process.env.FIREBASE_DB_URL);
+  console.log("🔍 Diagnostic — contenu actuel de /semaines :", JSON.stringify(diagVal));
+
   const semainesRef = db.ref("semaines");
   let action = null; // "created" | "closed_and_created" | null
 
@@ -151,6 +158,8 @@ async function main() {
 
   if (action.type === "created") {
     console.log("✅ Semaine créée automatiquement (filet de sécurité) :", action.nom);
+    const verifSnap = await db.ref("semaines").once("value");
+    console.log("🔍 Diagnostic — contenu de /semaines juste après écriture :", JSON.stringify(verifSnap.val()));
     return;
   }
 
