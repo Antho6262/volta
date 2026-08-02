@@ -259,11 +259,20 @@ async function bloquerSemaine(id, nom) {
   const classement = Object.entries(parMembre).sort((a, b) => b[1] - a[1])
     .map(([p, n], i) => `${i + 1}. ${p} — ${n} action(s)`).join("\n");
 
+  const ventes = actions.filter(a => a.produit_drogue && a.resultat === "Réussite");
+  const parProduit = {};
+  ventes.forEach(a => { parProduit[a.produit_drogue] = (parProduit[a.produit_drogue] || 0) + Number(a.quantite || 0); });
+  const totalVendu = Object.values(parProduit).reduce((acc, n) => acc + n, 0);
+  const gainsVentes = ventes.reduce((acc, a) => acc + Number(a.gains_totaux || 0), 0);
+  const detailVentes = Object.entries(parProduit).sort((a, b) => b[1] - a[1])
+    .map(([produit, qte]) => `${produit} : ${qte}`).join("\n");
+
   const texte = `📋 RÉSUMÉ — ${nom} — Volta\n` +
     `Actions : ${actions.length} (✅ ${reussites} / ❌ ${echecs})\n` +
     `Gains sale : ${formatMoney(gainsSale)}\n` +
-    `Gains propre : ${formatMoney(gainsPropre)}\n\n` +
-    `Classement :\n${classement || "—"}`;
+    `Gains propre : ${formatMoney(gainsPropre)}\n` +
+    (totalVendu > 0 ? `\nVentes (${totalVendu} au total — ${formatMoney(gainsVentes)}) :\n${detailVentes}\n` : "") +
+    `\nClassement :\n${classement || "—"}`;
 
   await db.ref("semaines/" + id).update({ bloquee: true, closedAt: Date.now(), resume: texte });
   document.getElementById("resumeWrap").style.display = "block";
@@ -272,16 +281,19 @@ async function bloquerSemaine(id, nom) {
   const cfgSnap = await db.ref("config/discord_webhook_semaine").once("value");
   const webhook = cfgSnap.val();
   if (webhook) {
+    const fields = [
+      { name: "Actions", value: `${actions.length} (✅ ${reussites} / ❌ ${echecs})`, inline: true },
+      { name: "Gains sale", value: formatMoney(gainsSale), inline: true },
+      { name: "Gains propre", value: formatMoney(gainsPropre), inline: true },
+    ];
+    if (totalVendu > 0) fields.push({ name: `Ventes (${totalVendu} au total — ${formatMoney(gainsVentes)})`, value: detailVentes || "—" });
+    fields.push({ name: "Classement", value: classement || "—" });
+
     await envoyerWebhookEmbed(webhook, {
       title: `📋 RÉSUMÉ — ${nom}`,
       color: VOLTA_COLOR_STEEL,
       thumbnail: { url: VOLTA_LOGO_URL },
-      fields: [
-        { name: "Actions", value: `${actions.length} (✅ ${reussites} / ❌ ${echecs})`, inline: true },
-        { name: "Gains sale", value: formatMoney(gainsSale), inline: true },
-        { name: "Gains propre", value: formatMoney(gainsPropre), inline: true },
-        { name: "Classement", value: classement || "—" }
-      ]
+      fields,
     });
     toast("Résumé envoyé sur Discord.");
   }
