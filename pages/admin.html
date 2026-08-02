@@ -267,11 +267,21 @@ async function bloquerSemaine(id, nom) {
   const detailVentes = Object.entries(parProduit).sort((a, b) => b[1] - a[1])
     .map(([produit, qte]) => `${produit} : ${qte}`).join("\n");
 
+  const parMembreVentes = {};
+  ventes.forEach(a => {
+    if (!parMembreVentes[a.prenom_membre]) parMembreVentes[a.prenom_membre] = {};
+    parMembreVentes[a.prenom_membre][a.produit_drogue] = (parMembreVentes[a.prenom_membre][a.produit_drogue] || 0) + Number(a.quantite || 0);
+  });
+  const detailVentesParMembre = Object.entries(parMembreVentes)
+    .sort((a, b) => Object.values(b[1]).reduce((s, n) => s + n, 0) - Object.values(a[1]).reduce((s, n) => s + n, 0))
+    .map(([prenom, produits]) => `${prenom} — ${Object.entries(produits).map(([p, q]) => `${p} : ${q}`).join(", ")}`)
+    .join("\n");
+
   const texte = `📋 RÉSUMÉ — ${nom} — Volta\n` +
     `Actions : ${actions.length} (✅ ${reussites} / ❌ ${echecs})\n` +
     `Gains sale : ${formatMoney(gainsSale)}\n` +
     `Gains propre : ${formatMoney(gainsPropre)}\n` +
-    (totalVendu > 0 ? `\nVentes (${totalVendu} au total — ${formatMoney(gainsVentes)}) :\n${detailVentes}\n` : "") +
+    (totalVendu > 0 ? `\nVentes (${totalVendu} au total — ${formatMoney(gainsVentes)}) :\n${detailVentes}\n\nQui a vendu quoi :\n${detailVentesParMembre}\n` : "") +
     `\nClassement :\n${classement || "—"}`;
 
   await db.ref("semaines/" + id).update({ bloquee: true, closedAt: Date.now(), resume: texte });
@@ -286,7 +296,10 @@ async function bloquerSemaine(id, nom) {
       { name: "Gains sale", value: formatMoney(gainsSale), inline: true },
       { name: "Gains propre", value: formatMoney(gainsPropre), inline: true },
     ];
-    if (totalVendu > 0) fields.push({ name: `Ventes (${totalVendu} au total — ${formatMoney(gainsVentes)})`, value: detailVentes || "—" });
+    if (totalVendu > 0) {
+      fields.push({ name: `Ventes (${totalVendu} au total — ${formatMoney(gainsVentes)})`, value: detailVentes || "—" });
+      fields.push({ name: "Qui a vendu quoi", value: detailVentesParMembre || "—" });
+    }
     fields.push({ name: "Classement", value: classement || "—" });
 
     await envoyerWebhookEmbed(webhook, {
