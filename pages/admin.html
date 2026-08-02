@@ -50,9 +50,9 @@ async function loadTab(t) {
 }
 
 /* ===================== SEMAINES ===================== */
-async function tabSemaines(body) {
-  const snap = await db.ref("semaines").once("value");
-  const list = entries(snap.val()).map(([id, s]) => ({ id, ...s })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+let SEMAINES_LISTENER_ACTIF = false;
+
+function renderTabSemaines(body, list) {
   body.innerHTML = `
     <div class="panel">
       <div class="panel-head"><h2>Nouvelle semaine</h2></div>
@@ -80,6 +80,23 @@ async function tabSemaines(body) {
       <p class="small muted mt8">Copie ce texte dans Discord, ou configure un webhook dans Admin → Config pour l'envoi automatique.</p>
     </div>
   `;
+}
+
+async function tabSemaines(body) {
+  if (SEMAINES_LISTENER_ACTIF) {
+    // Le listener tourne déjà (onglet quitté puis revisité) : un simple re-rendu
+    // avec les dernières données connues suffit, pas besoin de se ré-abonner.
+    const snap = await db.ref("semaines").once("value");
+    const list = entries(snap.val()).map(([id, s]) => ({ id, ...s })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    renderTabSemaines(body, list);
+    return;
+  }
+  SEMAINES_LISTENER_ACTIF = true;
+  db.ref("semaines").on("value", (snap) => {
+    if (currentTab !== "semaines") return; // évite de peindre un onglet qui n'est plus affiché
+    const list = entries(snap.val()).map(([id, s]) => ({ id, ...s })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    renderTabSemaines(document.getElementById("tabBody"), list);
+  });
 }
 /* Crée la prochaine semaine, enchaînée après la dernière semaine existante
    (peu importe si celle-ci est bloquée ou non). Évite les doublons de créneau
@@ -137,7 +154,7 @@ async function bloquerSemaine(id, nom) {
   const classement = Object.entries(parMembre).sort((a, b) => b[1] - a[1])
     .map(([p, n], i) => `${i + 1}. ${p} — ${n} action(s)`).join("\n");
 
-  const texte = `📋 RÉSUMÉ — ${nom} — Kronen Krieg\n` +
+  const texte = `📋 RÉSUMÉ — ${nom} — Volta\n` +
     `Actions : ${actions.length} (✅ ${reussites} / ❌ ${echecs})\n` +
     `Gains sale : ${formatMoney(gainsSale)}\n` +
     `Gains propre : ${formatMoney(gainsPropre)}\n\n` +
