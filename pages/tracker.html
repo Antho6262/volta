@@ -28,7 +28,7 @@ function majSemaines(snap) {
   const lbl = document.getElementById("weekLabel");
   if (lbl) lbl.textContent = ACTIVE_WEEK ? `Semaine active : ${ACTIVE_WEEK.nom}${ACTIVE_WEEK.bloquee ? " (bloquée — créez une nouvelle semaine dans Admin)" : ""}` : "Aucune semaine active — créez-en une dans Admin → Semaines pour pouvoir enregistrer des actions.";
   remplirFiltSemaine();
-  if (!VIEW_WEEK) renderTable();
+  if (!VIEW_WEEK) subscribeActionsTable();
 }
 
 function remplirFiltSemaine() {
@@ -41,7 +41,7 @@ function onFiltSemaineChange() {
   const id = document.getElementById("filtSemaine").value;
   VIEW_WEEK = ALL_SEMAINES.find(s => s.id === id) || null;
   document.getElementById("histWeekLabel").textContent = VIEW_WEEK ? VIEW_WEEK.nom : "";
-  renderTable();
+  subscribeActionsTable();
 }
 
 function renderContent() {
@@ -272,16 +272,28 @@ async function ajouterAction() {
   toast("Action enregistrée.");
   logAudit("Action ajoutée", `${m.prenom} — ${act.nom} x${qte} (${resultat})`);
   if (resultat === "Réussite") verifierQuotaEtAlerter(membreId);
-  await renderTable();
   await chargerListes();
 }
 
 let ALL_ACTIONS = [];
-async function renderTable() {
-  const semaine = VIEW_WEEK || ACTIVE_WEEK;
-  const snap = await db.ref("actions/" + (semaine ? semaine.id : "x")).once("value");
-  ALL_ACTIONS = entries(snap.val()).map(([id, a]) => ({ id, ...a })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+let ACTIONS_TABLE_REF = null;
+let ACTIONS_TABLE_WEEK_ID = null;
 
+function subscribeActionsTable() {
+  const semaine = VIEW_WEEK || ACTIVE_WEEK;
+  const weekId = semaine ? semaine.id : null;
+  if (weekId === ACTIONS_TABLE_WEEK_ID) return;
+  if (ACTIONS_TABLE_REF) ACTIONS_TABLE_REF.off("value");
+  ACTIONS_TABLE_WEEK_ID = weekId;
+  if (!weekId) { ALL_ACTIONS = []; renderTable(); return; }
+  ACTIONS_TABLE_REF = db.ref("actions/" + weekId);
+  ACTIONS_TABLE_REF.on("value", (snap) => {
+    ALL_ACTIONS = entries(snap.val()).map(([id, a]) => ({ id, ...a })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    renderTable();
+  });
+}
+
+function renderTable() {
   const fm = document.getElementById("filtMembre").value;
   const fa = document.getElementById("filtAction").value;
   const fr = document.getElementById("filtResultat").value;
@@ -379,7 +391,6 @@ async function modifierAction(id) {
   logAudit("Action modifiée", `${a.prenom_membre} — ${update.action || a.action}`);
   if (update.resultat === "Réussite") verifierQuotaEtAlerter(a.membre_id);
   await chargerListes();
-  await renderTable();
 }
 
 async function supprimerAction(id) {
@@ -388,7 +399,6 @@ async function supprimerAction(id) {
   await db.ref("actions/" + (VIEW_WEEK || ACTIVE_WEEK).id + "/" + id).remove();
   toast("Action supprimée.");
   logAudit("Action supprimée", a ? `${a.prenom_membre} — ${a.action}` : id);
-  renderTable();
 }
 
 (async function () {
@@ -403,7 +413,7 @@ async function supprimerAction(id) {
   renderContent();
   await chargerListes();
   remplirFiltSemaine();
-  await renderTable();
+  subscribeActionsTable();
 
   db.ref("semaines").on("value", majSemaines);
 
