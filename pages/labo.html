@@ -29,10 +29,10 @@ function renderTout() {
   const gradesMasques = new Set(Object.keys(visi).filter(g => visi[g] && visi[g].labo === false));
   GRADES_MASQUES = gradesMasques;
 
-  const wrapFM = document.getElementById("wrapFMembre"), filtM = document.getElementById("filtMembre"), selStockM = document.getElementById("selStockMembre");
+  const wrapFM = document.getElementById("wrapFMembre"), filtM = document.getElementById("filtMembre");
   const prevFM = document.getElementById("fMembre") ? document.getElementById("fMembre").value : null;
-  const prevFiltM = filtM.value, prevStockM = selStockM.value;
-  filtM.innerHTML = '<option value="">Tous les membres</option>'; selStockM.innerHTML = '<option value="">Tous les membres</option>';
+  const prevFiltM = filtM.value;
+  filtM.innerHTML = '<option value="">Tous les membres</option>';
   if (SESSION.role === "admin") {
     wrapFM.innerHTML = `<label class="l">Membre</label><select id="fMembre"></select>`;
     const selM = document.getElementById("fMembre");
@@ -48,7 +48,6 @@ function renderTout() {
     if (m.actif === false || gradesMasques.has(m.grade)) return;
     const label = m.prenom + (m.nom ? " " + m.nom : "");
     filtM.appendChild(new Option(label, id));
-    selStockM.appendChild(new Option(label, id, id === SESSION.id, id === (prevStockM || SESSION.id)));
   });
   if (prevFiltM) filtM.value = prevFiltM;
 
@@ -120,7 +119,7 @@ function renderContent() {
 
     <div class="panel mt16">
       <div class="panel-head"><h2>Stock d'ingrédients (commun)</h2></div>
-      <p class="small muted">Stock commun à toute la faction — ajoute ce que tu as récolté (ex: champignons), ça met à jour le stock pour tout le monde.</p>
+      <p class="small muted">Stock commun à toute la faction — ajoute ce que tu as récolté (ex: champignons), ça met à jour le stock pour tout le monde. Pour créer un nouvel ingrédient ou une nouvelle drogue (recette), voir Admin → Stock → catégorie Labo.</p>
       <div id="zoneIngredients">Chargement…</div>
     </div>
 
@@ -137,29 +136,12 @@ function renderContent() {
         <div><label class="l">Date</label><input type="date" id="fDate"></div>
         <div style="display:flex;align-items:flex-end;"><button class="btn btn-primary" style="width:100%;" onclick="ajouterProduction()">Enregistrer</button></div>
       </div>
-      <p class="small muted mt8">Une production réussie retire automatiquement les ingrédients de la recette du stock commun, et ajoute la quantité produite au stock perso (pas au stock commun de la faction).</p>
-    </div>
-
-    <div class="panel mt16">
-      <div class="panel-head"><h2>Créer une drogue (catalogue + recette)</h2></div>
-      <p class="small muted">Compose la recette à partir des ingrédients du stock commun, puis valide pour créer le produit fini.</p>
-      <div class="row">
-        <div><label class="l">Ingrédient</label><select id="recetteIngredient"></select></div>
-        <div><label class="l">Quantité</label><input type="number" id="recetteQte" value="1" min="1"></div>
-        <div style="display:flex;align-items:flex-end;"><button class="btn btn-gold" style="width:100%;" onclick="ajouterLigneRecette()">+ Ajouter à la recette</button></div>
-      </div>
-      <p class="small muted mt8" id="recetteEnCours">Aucune ligne de recette en cours.</p>
-      <div class="row mt8">
-        <div><label class="l">Nom de la drogue</label><input type="text" id="nouveauProduit" placeholder="Ex: Meth"></div>
-        <div style="display:flex;align-items:flex-end;"><button class="btn btn-primary" style="width:100%;" onclick="ajouterProduit()">Créer la drogue</button></div>
-      </div>
-      <div class="mt16" id="zoneProduitsFinis"></div>
+      <p class="small muted mt8">Une production réussie retire automatiquement les ingrédients de la recette du stock commun, et ajoute la quantité produite au stock commun de la faction.</p>
     </div>
 
     <div class="panel mt24">
       <div class="panel-head">
-        <h2>Stock Labo — par membre</h2>
-        <select id="selStockMembre" onchange="afficherStock()"><option value="">Tous les membres</option></select>
+        <h2>Stock Labo — commun</h2>
       </div>
       <div id="zoneStock">Chargement…</div>
     </div>
@@ -186,30 +168,6 @@ function toggleRaison() {
   document.getElementById("raisonWrap").style.display = document.getElementById("fResultat").value === "Échec" ? "block" : "none";
 }
 
-let RECETTE_EN_COURS = [];
-
-function ajouterLigneRecette() {
-  const pid = document.getElementById("recetteIngredient").value;
-  const qte = Number(document.getElementById("recetteQte").value) || 0;
-  if (!pid || qte <= 0) { toast("Choisis un ingrédient et une quantité.", true); return; }
-  RECETTE_EN_COURS.push({ ingredientId: pid, qty: qte });
-  document.getElementById("recetteEnCours").innerHTML = "Recette en cours : " + RECETTE_EN_COURS.map(l => `${l.qty}x ${(LABO_PRODUITS[l.ingredientId] || {}).nom || "?"}`).join(", ");
-}
-
-async function ajouterProduit() {
-  const nom = document.getElementById("nouveauProduit").value.trim();
-  if (!nom) { toast("Nom requis.", true); return; }
-  await db.ref("stock/labo_cat/produits/" + uid()).set({ nom, prix: 0, stock: 0, seuil: 0, recipe: RECETTE_EN_COURS });
-  document.getElementById("nouveauProduit").value = "";
-  RECETTE_EN_COURS = [];
-  document.getElementById("recetteEnCours").textContent = "Aucune ligne de recette en cours.";
-}
-
-async function supprimerProduit(pid) {
-  if (!confirm("Supprimer ce produit du catalogue Labo ?")) return;
-  await db.ref("stock/labo_cat/produits/" + pid).remove();
-}
-
 async function ajouterIngredient(pid) {
   const input = document.getElementById("qteIng_" + pid);
   const qte = Number(input.value) || 0;
@@ -231,28 +189,7 @@ function afficherZoneIngredients() {
       <input type="number" id="qteIng_${pid}" value="1" min="1" style="max-width:90px;">
       <button class="btn btn-gold" onclick="ajouterIngredient('${pid}')">Ajouter au stock commun</button>
     </div>
-  `).join("") : '<p class="muted small">Aucun ingrédient configuré.</p>';
-
-  const selIng = document.getElementById("recetteIngredient");
-  if (selIng) {
-    const prevIng = selIng.value;
-    selIng.innerHTML = ingredients.length
-      ? ingredients.map(([pid, p]) => `<option value="${pid}">${p.nom}</option>`).join("")
-      : '<option value="">Aucun ingrédient configuré</option>';
-    if (prevIng) selIng.value = prevIng;
-  }
-
-  const zoneProd = document.getElementById("zoneProduitsFinis");
-  if (zoneProd) {
-    const produits = Object.entries(LABO_PRODUITS).filter(([, p]) => p.recipe && p.recipe.length);
-    zoneProd.innerHTML = produits.length ? `<table><thead><tr><th>Drogue</th><th>Recette</th><th></th></tr></thead><tbody>
-      ${produits.map(([pid, p]) => `<tr>
-        <td>${p.nom}</td>
-        <td>${(p.recipe || []).map(l => `${l.qty}x ${(LABO_PRODUITS[l.ingredientId] || {}).nom || "?"}`).join(", ") || "—"}</td>
-        <td><span class="btn btn-sm btn-danger" onclick="supprimerProduit('${pid}')">Suppr.</span></td>
-      </tr>`).join("")}
-    </tbody></table>` : '<p class="muted small">Aucune drogue créée pour le moment.</p>';
-  }
+  `).join("") : '<p class="muted small">Aucun ingrédient configuré — vas dans Admin → Stock → catégorie Labo pour en créer.</p>';
 }
 
 async function ajouterProduction() {
@@ -285,10 +222,11 @@ async function ajouterProduction() {
       const currentIng = Number(snapIng.val()) || 0;
       await refIng.set(Math.max(0, currentIng - ligne.qty * qte));
     }
-    const ref = db.ref(`labo_stock/${membreId}/${pid}`);
-    const snap = await ref.once("value");
-    const current = Number(snap.val()) || 0;
-    await ref.set(current + qte);
+
+    const refCommun = db.ref(`stock/labo_cat/produits/${pid}/stock`);
+    const snapCommun = await refCommun.once("value");
+    const currentCommun = Number(snapCommun.val()) || 0;
+    await refCommun.set(currentCommun + qte);
   }
 
   toast("Production enregistrée.");
@@ -298,31 +236,23 @@ async function ajouterProduction() {
 }
 
 async function afficherStock() {
-  const membreId = document.getElementById("selStockMembre").value;
   const zone = document.getElementById("zoneStock");
   const produitsIds = Object.entries(LABO_PRODUITS).filter(([, p]) => p.recipe && p.recipe.length).map(([pid]) => pid);
   if (!produitsIds.length) { zone.innerHTML = '<p class="muted small">Aucun produit fini Labo configuré.</p>'; return; }
 
-  if (membreId) {
-    const stockMembre = LABO_STOCK[membreId] || {};
-    zone.innerHTML = `<table><thead><tr><th>Produit</th><th>Stock</th></tr></thead><tbody>
-      ${produitsIds.map(pid => `<tr><td>${LABO_PRODUITS[pid].nom}</td><td>${Number(stockMembre[pid]) || 0}</td></tr>`).join("")}
-    </tbody></table>`;
-  } else {
-    const membresActifs = entries(MEMBRES).filter(([, m]) => m.actif !== false && !GRADES_MASQUES.has(m.grade));
-    zone.innerHTML = `<table><thead><tr><th>Membre</th>${produitsIds.map(pid => `<th>${LABO_PRODUITS[pid].nom}</th>`).join("")}</tr></thead><tbody>
-      ${membresActifs.map(([id, m]) => `<tr><td>${m.prenom}</td>${produitsIds.map(pid => `<td>${Number((LABO_STOCK[id] || {})[pid]) || 0}</td>`).join("")}</tr>`).join("")}
-    </tbody></table>`;
-  }
+  zone.innerHTML = `<table><thead><tr><th>Produit</th><th>Stock commun</th></tr></thead><tbody>
+    ${produitsIds.map(pid => `<tr><td>${LABO_PRODUITS[pid].nom}</td><td>${Number(LABO_PRODUITS[pid].stock) || 0}</td></tr>`).join("")}
+  </tbody></table>`;
 }
 
 async function supprimerProduction(semaineId, id, membreId, pid, qte, resultat) {
   if (!confirm("Supprimer cette production ? Les ingrédients consommés seront restitués au stock commun.")) return;
   if (resultat === "Réussite") {
-    const ref = db.ref(`labo_stock/${membreId}/${pid}`);
-    const snap = await ref.once("value");
-    const current = Number(snap.val()) || 0;
-    await ref.set(Math.max(0, current - qte));
+    const refCommun = db.ref(`stock/labo_cat/produits/${pid}/stock`);
+    const snapCommun = await refCommun.once("value");
+    const currentCommun = Number(snapCommun.val()) || 0;
+    await refCommun.set(Math.max(0, currentCommun - qte));
+
     const recipe = (LABO_PRODUITS[pid] || {}).recipe || [];
     for (const ligne of recipe) {
       const refIng = db.ref(`labo_stock_commun/${ligne.ingredientId}`);
