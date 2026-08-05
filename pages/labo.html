@@ -140,6 +140,22 @@ function renderContent() {
       <p class="small muted mt8">Une production réussie retire automatiquement les ingrédients de la recette du stock commun, et ajoute la quantité produite au stock perso (pas au stock commun de la faction).</p>
     </div>
 
+    <div class="panel mt16">
+      <div class="panel-head"><h2>Créer une drogue (catalogue + recette)</h2></div>
+      <p class="small muted">Compose la recette à partir des ingrédients du stock commun, puis valide pour créer le produit fini.</p>
+      <div class="row">
+        <div><label class="l">Ingrédient</label><select id="recetteIngredient"></select></div>
+        <div><label class="l">Quantité</label><input type="number" id="recetteQte" value="1" min="1"></div>
+        <div style="display:flex;align-items:flex-end;"><button class="btn btn-gold" style="width:100%;" onclick="ajouterLigneRecette()">+ Ajouter à la recette</button></div>
+      </div>
+      <p class="small muted mt8" id="recetteEnCours">Aucune ligne de recette en cours.</p>
+      <div class="row mt8">
+        <div><label class="l">Nom de la drogue</label><input type="text" id="nouveauProduit" placeholder="Ex: Meth"></div>
+        <div style="display:flex;align-items:flex-end;"><button class="btn btn-primary" style="width:100%;" onclick="ajouterProduit()">Créer la drogue</button></div>
+      </div>
+      <div class="mt16" id="zoneProduitsFinis"></div>
+    </div>
+
     <div class="panel mt24">
       <div class="panel-head">
         <h2>Stock Labo — par membre</h2>
@@ -216,6 +232,27 @@ function afficherZoneIngredients() {
       <button class="btn btn-gold" onclick="ajouterIngredient('${pid}')">Ajouter au stock commun</button>
     </div>
   `).join("") : '<p class="muted small">Aucun ingrédient configuré.</p>';
+
+  const selIng = document.getElementById("recetteIngredient");
+  if (selIng) {
+    const prevIng = selIng.value;
+    selIng.innerHTML = ingredients.length
+      ? ingredients.map(([pid, p]) => `<option value="${pid}">${p.nom}</option>`).join("")
+      : '<option value="">Aucun ingrédient configuré</option>';
+    if (prevIng) selIng.value = prevIng;
+  }
+
+  const zoneProd = document.getElementById("zoneProduitsFinis");
+  if (zoneProd) {
+    const produits = Object.entries(LABO_PRODUITS).filter(([, p]) => p.recipe && p.recipe.length);
+    zoneProd.innerHTML = produits.length ? `<table><thead><tr><th>Drogue</th><th>Recette</th><th></th></tr></thead><tbody>
+      ${produits.map(([pid, p]) => `<tr>
+        <td>${p.nom}</td>
+        <td>${(p.recipe || []).map(l => `${l.qty}x ${(LABO_PRODUITS[l.ingredientId] || {}).nom || "?"}`).join(", ") || "—"}</td>
+        <td><span class="btn btn-sm btn-danger" onclick="supprimerProduit('${pid}')">Suppr.</span></td>
+      </tr>`).join("")}
+    </tbody></table>` : '<p class="muted small">Aucune drogue créée pour le moment.</p>';
+  }
 }
 
 async function ajouterProduction() {

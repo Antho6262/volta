@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { page: "stats",        icon: "📊", label: "Stats",        file: "stats.html" },
   { page: "stock",        icon: "📦", label: "Stock",        file: "stock.html" },
   { page: "quotas",       icon: "🎯", label: "Quotas",       file: "quotas.html" },
+  { page: "labo",         icon: "🧪", label: "Labo",         file: "labo.html" },
   { page: "blanchiment",  icon: "💵", label: "Blanchiment",  file: "blanchiment.html" },
   { page: "paye",         icon: "💰", label: "Paye",         file: "paye.html" },
   { page: "transactions", icon: "🔁", label: "Transactions", file: "transactions.html" },
