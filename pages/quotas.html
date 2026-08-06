@@ -84,13 +84,13 @@ function renderDerived() {
   }).join("") : '<tr class="empty-row"><td colspan="4">Aucun membre</td></tr>';
 
   const wrap = document.getElementById("quotasProduitsWrap");
-  const catIds = [...new Set(Object.values(DATA.actionsDispo).map(a => a.cat_variable).filter(Boolean))]
-    .filter(catId => (DATA.stock[catId] || {}).nom !== "Labo");
+  const catIds = [...new Set(Object.values(DATA.actionsDispo).map(a => a.cat_variable).filter(Boolean))];
   if (!catIds.length) { wrap.innerHTML = ""; return; }
 
   wrap.innerHTML = catIds.map(catId => {
     const cat = DATA.stock[catId];
     if (!cat) return "";
+    const isLabo = cat.nom === "Labo";
     const produitIds = new Set(Object.keys(cat.produits || {}));
     return `<div class="panel">
       <div class="panel-head"><h2>${cat.emoji || ""} Quota ${cat.nom} (toutes confondues)</h2></div>
@@ -99,8 +99,10 @@ function renderDerived() {
         <tbody>
           ${membres.map(m => {
             const quota = Number((DATA.quotasCategorie[m.id] || {})[catId]) || 0;
-            const fait = actions.filter(a => a.membre_id === m.id && produitIds.has(a.produit_drogue_id) && a.resultat === "Réussite")
-              .reduce((acc, a) => acc + Number(a.quantite || 0), 0);
+            const actionsMembre = actions.filter(a => a.membre_id === m.id && produitIds.has(a.produit_drogue_id) && a.resultat === "Réussite");
+            // Labo : chaque production compte pour 1, quelle que soit la quantité fabriquée
+            // (une "fournée" de 150 SporX = 1, pas 150). Les autres catégories comptent la quantité.
+            const fait = isLabo ? actionsMembre.length : actionsMembre.reduce((acc, a) => acc + Number(a.quantite || 0), 0);
             const pct = quota > 0 ? Math.round(fait / quota * 100) : 0;
             return `<tr><td>${m.prenom}</td><td>${quota}</td><td>${fait}</td><td>${barreHtml(pct)}</td></tr>`;
           }).join("")}
