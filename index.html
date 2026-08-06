@@ -1,114 +1,627 @@
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Volta</title>
-<link rel="stylesheet" href="css/style.css">
-</head>
-<body class="login-body">
+// ============================================================
+// BOT VOLTA — process persistant (24/7), pensé pour Render.com.
+//
+// Ce que fait ce bot :
+// 1) Reste connecté en continu à Discord (apparaît "en ligne").
+// 2) Dès qu'un message est posté dans le salon garages, il l'analyse
+//    et enregistre automatiquement le mouvement dans Fourrière.
+// 3) Toutes les 5 minutes, vérifie si une semaine doit être créée
+//    (filet de sécurité) ou clôturée/enchaînée (dimanche 19h Paris),
+//    et envoie le résumé sur le webhook Discord configuré.
+// 4) Expose une petite route HTTP (/) pour que Render + UptimeRobot
+//    puissent le garder éveillé en permanence (offre gratuite).
+// ============================================================
 
-<div class="login-wrap">
-  <div class="login-card fade-in">
-    <img src="img/logo.png" alt="Volta" class="login-coin">
-    <div class="login-brand">VOLTA</div>
-    <div class="login-sub">Honneur · Loyauté · Silence</div>
-    <div class="sigil-rule"></div>
+const express = require("express");
+const admin = require("firebase-admin");
+const { Client, GatewayIntentBits, Events } = require("discord.js");
 
-    <div class="field">
-      <label>Membre</label>
-      <select id="selMembre"><option value="">Chargement…</option></select>
-    </div>
-    <div class="field">
-      <label>Mot de passe</label>
-      <input type="password" id="inpPass" placeholder="••••••••">
-    </div>
-    <button class="btn btn-primary" onclick="doLogin()">Se connecter</button>
-    <div class="login-error" id="errMsg"></div>
-    <div class="login-foot"><a href="#" onclick="toggleOublie(event)" style="color:var(--gold)">Mot de passe oublié ?</a></div>
-    <div id="oublieWrap" style="display:none;margin-top:10px;">
-      <p class="small muted">Une demande sera envoyée à un admin, qui réinitialisera ton mot de passe.</p>
-      <button class="btn btn-gold" style="width:100%;" onclick="envoyerDemandeOubli()">Envoyer la demande</button>
-      <div class="small" id="oublieMsg" style="margin-top:6px;"></div>
-    </div>
-    <div class="login-foot">Première installation ? <a href="setup.html" style="color:var(--gold)">Initialiser le site</a></div>
-  </div>
-</div>
+const fs = require("fs");
+const path = require("path");
 
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-<script src="js/firebase-config.js"></script>
-<script>
-let MEMBRES = {};
+function lireFichierSiExiste(nom) {
+  const p = path.join(__dirname, nom);
+  if (fs.existsSync(p)) return fs.readFileSync(p, "utf8").trim();
+  return null;
+}
 
-async function chargerMembres() {
-  const sel = document.getElementById("selMembre");
-  try {
-    const snap = await db.ref("membres").once("value");
-    const data = snap.val() || {};
-    MEMBRES = data;
-    sel.innerHTML = '<option value="">— Sélectionner —</option>';
-    entries(data).forEach(([id, m]) => {
-      if (m.actif === false) return;
-      const opt = document.createElement("option");
-      opt.value = id;
-      opt.textContent = m.prenom + (m.nom ? " " + m.nom : "");
-      sel.appendChild(opt);
+// ---------- Config ----------
+// Priorité aux variables d'environnement ; sinon on lit des fichiers locaux
+// (utile sur les hébergeurs dont le panel n'injecte pas correctement les variables).
+const DISCORD_TOKEN = process.env.DISCORD_BOT_TOKEN || lireFichierSiExiste("token.txt");
+const CHANNEL_ID_GARAGES = process.env.DISCORD_CHANNEL_ID_GARAGES || lireFichierSiExiste("channel.txt");
+const FIREBASE_DB_URL = process.env.FIREBASE_DB_URL || lireFichierSiExiste("dburl.txt") || "https://klan-nostrad-default-rtdb.europe-west1.firebasedatabase.app";
+const serviceAccountRaw = process.env.FIREBASE_SERVICE_ACCOUNT || lireFichierSiExiste("serviceAccountKey.json");
+const serviceAccount = JSON.parse(serviceAccountRaw);
+
+if (!DISCORD_TOKEN || !CHANNEL_ID_GARAGES || !FIREBASE_DB_URL) {
+  console.error("Variables d'environnement manquantes (DISCORD_BOT_TOKEN / DISCORD_CHANNEL_ID_GARAGES / FIREBASE_DB_URL).");
+  process.exit(1);
+}
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+  databaseURL: FIREBASE_DB_URL,
+});
+const db = admin.database();
+
+// ---------- Petit serveur HTTP (pour Render + UptimeRobot) ----------
+const app = express();
+app.get("/", (req, res) => res.send("Bot Volta en ligne ✅"));
+app.listen(process.env.PORT || 3000, () => console.log("Serveur HTTP de garde démarré."));
+
+// ---------- Utilitaires ----------
+function todayISO() {
+  return new Date().toISOString().slice(0, 10);
+}
+function formatMoney(n) {
+  return Number(n || 0).toLocaleString("fr-FR") + " $";
+}
+
+// ---------- Dates ancrées sur Europe/Paris (rattrapage fiable même après une panne) ----------
+function getParisParts(ts) {
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+  });
+  const parts = fmt.formatToParts(new Date(ts));
+  const get = (t) => Number(parts.find((p) => p.type === t).value);
+  return { year: get("year"), month: get("month"), day: get("day"), hour: get("hour") === 24 ? 0 : get("hour"), minute: get("minute"), second: get("second") };
+}
+function getParisWeekday(ts) {
+  const wd = new Intl.DateTimeFormat("en-US", { timeZone: "Europe/Paris", weekday: "short" }).format(new Date(ts));
+  return { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }[wd];
+}
+function parisWallToUTC(y, m, d, h, mi, s) {
+  let guess = Date.UTC(y, m - 1, d, h, mi, s || 0);
+  for (let i = 0; i < 2; i++) {
+    const p = getParisParts(guess);
+    const guessAsIfLocal = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second);
+    guess += Date.UTC(y, m - 1, d, h, mi, s || 0) - guessAsIfLocal;
+  }
+  return guess;
+}
+function ajouterJoursCivils(y, m, d, jours) {
+  const anchor = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+  anchor.setUTCDate(anchor.getUTCDate() + jours);
+  return { year: anchor.getUTCFullYear(), month: anchor.getUTCMonth() + 1, day: anchor.getUTCDate() };
+}
+function limitesSemaine(ts) {
+  const p = getParisParts(ts);
+  const weekday = getParisWeekday(ts);
+  let dimRef = ajouterJoursCivils(p.year, p.month, p.day, -weekday);
+  let debut = parisWallToUTC(dimRef.year, dimRef.month, dimRef.day, 19, 0, 0);
+  if (debut > ts) {
+    dimRef = ajouterJoursCivils(dimRef.year, dimRef.month, dimRef.day, -7);
+    debut = parisWallToUTC(dimRef.year, dimRef.month, dimRef.day, 19, 0, 0);
+  }
+  const dimSuivant = ajouterJoursCivils(dimRef.year, dimRef.month, dimRef.day, 7);
+  const fin = parisWallToUTC(dimSuivant.year, dimSuivant.month, dimSuivant.day, 19, 0, 0);
+  return { debut, fin, verrouAt: fin };
+}
+function fmtJJMM(ts) {
+  const p = getParisParts(ts);
+  return String(p.day).padStart(2, "0") + "/" + String(p.month).padStart(2, "0");
+}
+function nomAutoSemaine(debut, fin) { return "Semaine du " + fmtJJMM(debut) + " au " + fmtJJMM(fin); }
+function prochainesBornes(derniere) {
+  if (!derniere || !derniere.fin) return limitesSemaine(Date.now());
+  const debut = derniere.fin;
+  const p = getParisParts(debut);
+  const dimSuivant = ajouterJoursCivils(p.year, p.month, p.day, 7);
+  const fin = parisWallToUTC(dimSuivant.year, dimSuivant.month, dimSuivant.day, 19, 0, 0);
+  return { debut, fin, verrouAt: fin };
+}
+
+// ---------- Fourrière : analyse des messages garages ----------
+const CHANNEL_ID_ABSENCES = "1521529291257675991";
+const CHANNEL_ID_TENUE = "1521756617991786516";
+const REGEX_MOUVEMENT = /(.+?) a (rangé|sorti) un\(e\) (\S+) (?:dans le garage \d+|du garage \d+|de la fourrière)\s*:\s*(\S+)/i;
+
+async function getActiveWeekId() {
+  const snap = await db.ref("semaines").once("value");
+  const list = Object.entries(snap.val() || {}).map(([id, s]) => ({ id, ...s }));
+  list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const active = list.find((s) => s.bloquee !== true) || list[0] || null;
+  return active ? active.id : null;
+}
+
+function trouverMembre(membres, nomComplet) {
+  const cible = nomComplet.trim().toLowerCase();
+  for (const [id, m] of Object.entries(membres)) {
+    const full = `${m.prenom || ""} ${m.nom || ""}`.trim().toLowerCase();
+    if (full === cible) return { id, ...m };
+  }
+  const parPrenom = Object.entries(membres).filter(
+    ([, m]) => (m.prenom || "").trim().toLowerCase() === cible.split(" ")[0]
+  );
+  if (parPrenom.length === 1) return { id: parPrenom[0][0], ...parPrenom[0][1] };
+  return null;
+}
+
+function extraireTexte(message) {
+  const morceaux = [];
+  if (message.content) morceaux.push(message.content);
+  message.embeds.forEach((e) => {
+    if (e.description) morceaux.push(e.description);
+    if (e.title) morceaux.push(e.title);
+  });
+  return morceaux.join("\n");
+}
+
+async function traiterMessageGarage(message) {
+  const texte = extraireTexte(message);
+  const lignes = texte.split("\n");
+
+  for (const ligne of lignes) {
+    const match = ligne.match(REGEX_MOUVEMENT);
+    if (!match) continue;
+
+    const [, nomCompletBrut, actionMot, modele, plaqueBrut] = match;
+    const nomComplet = nomCompletBrut.replace(/\*/g, "").trim();
+    const plaque = plaqueBrut.replace(/\*/g, "").trim();
+    const semaineId = await getActiveWeekId();
+    if (!semaineId) { console.log("Aucune semaine active — mouvement ignoré pour l'instant."); continue; }
+
+    const membresSnap = await db.ref("membres").once("value");
+    const membres = membresSnap.val() || {};
+    const membre = trouverMembre(membres, nomComplet);
+    const type = actionMot.toLowerCase() === "sorti" ? "sortie" : "rangement";
+
+    await db.ref(`fourriere/${semaineId}`).push({
+      membre_id: membre ? membre.id : null,
+      prenom_membre: membre ? membre.prenom : nomComplet,
+      nom_membre: membre ? membre.nom || "" : "",
+      type,
+      notes: `${modele} — ${plaque} (auto Discord)`,
+      date: todayISO(),
+      par: "Discord (auto)",
+      createdAt: Date.now(),
     });
-    if (Object.keys(data).length === 0) {
-      sel.innerHTML = '<option value="">Aucun membre — lancez l\'initialisation</option>';
+    console.log(`✅ ${type} — ${membre ? membre.prenom : nomComplet} — ${modele} (${plaque})`);
+  }
+}
+
+// ---------- Gestion des semaines (identique à la logique GitHub Actions) ----------
+async function construireResume(weekId, nom) {
+  const snap = await db.ref("actions/" + weekId).once("value");
+  const actions = Object.values(snap.val() || {});
+  const gainsSale = actions.reduce((acc, a) => acc + Number(a.argent_sale || 0), 0);
+  const gainsPropre = actions.reduce((acc, a) => acc + Number(a.argent_propre || 0), 0);
+  const reussites = actions.filter((a) => a.resultat === "Réussite").length;
+  const echecs = actions.filter((a) => a.resultat === "Échec").length;
+
+  const parMembre = {};
+  actions.forEach((a) => { parMembre[a.prenom_membre] = (parMembre[a.prenom_membre] || 0) + 1; });
+  const classement = Object.entries(parMembre)
+    .sort((a, b) => b[1] - a[1])
+    .map(([p, n], i) => `${i + 1}. ${p} — ${n} action(s)`)
+    .join("\n");
+
+  // Détail des ventes (actions liées à un produit de drogue, réussies).
+  const ventes = actions.filter((a) => a.produit_drogue && a.resultat === "Réussite");
+  const parProduit = {};
+  ventes.forEach((a) => { parProduit[a.produit_drogue] = (parProduit[a.produit_drogue] || 0) + Number(a.quantite || 0); });
+  const totalVendu = Object.values(parProduit).reduce((acc, n) => acc + n, 0);
+  const gainsVentes = ventes.reduce((acc, a) => acc + Number(a.gains_totaux || 0), 0);
+  const detailVentes = Object.entries(parProduit)
+    .sort((a, b) => b[1] - a[1])
+    .map(([produit, qte]) => `${produit} : ${qte}`)
+    .join("\n");
+
+  // Détail par membre : qui a vendu quoi.
+  const parMembreVentes = {};
+  ventes.forEach((a) => {
+    if (!parMembreVentes[a.prenom_membre]) parMembreVentes[a.prenom_membre] = {};
+    parMembreVentes[a.prenom_membre][a.produit_drogue] = (parMembreVentes[a.prenom_membre][a.produit_drogue] || 0) + Number(a.quantite || 0);
+  });
+  const detailVentesParMembre = Object.entries(parMembreVentes)
+    .sort((a, b) => Object.values(b[1]).reduce((s, n) => s + n, 0) - Object.values(a[1]).reduce((s, n) => s + n, 0))
+    .map(([prenom, produits]) => `**${prenom}** — ${Object.entries(produits).map(([p, q]) => `${p} : ${q}`).join(", ")}`)
+    .join("\n");
+
+  return { gainsSale, gainsPropre, reussites, echecs, nbActions: actions.length, classement, totalVendu, gainsVentes, detailVentes, detailVentesParMembre };
+}
+
+async function envoyerWebhookResume(webhook, resume, nom) {
+  try {
+    const fields = [
+      { name: "Actions", value: `${resume.nbActions} (✅ ${resume.reussites} / ❌ ${resume.echecs})`, inline: true },
+      { name: "Gains sale", value: formatMoney(resume.gainsSale), inline: true },
+      { name: "Gains propre", value: formatMoney(resume.gainsPropre), inline: true },
+    ];
+    if (resume.totalVendu > 0) {
+      fields.push({ name: `Ventes (${resume.totalVendu} au total — ${formatMoney(resume.gainsVentes)})`, value: resume.detailVentes || "—" });
+      fields.push({ name: "Qui a vendu quoi", value: resume.detailVentesParMembre || "—" });
     }
+    fields.push({ name: "Classement", value: resume.classement || "—" });
+
+    await fetch(webhook, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        embeds: [{
+          title: `📋 RÉSUMÉ — ${nom}`,
+          color: 0x6b7280,
+          fields,
+        }],
+      }),
+    });
+    console.log("Résumé envoyé sur Discord.");
   } catch (e) {
-    sel.innerHTML = '<option value="">Erreur de connexion Firebase</option>';
-    document.getElementById("errMsg").textContent = "Vérifiez la config Firebase (js/firebase-config.js).";
+    console.error("Échec envoi webhook :", e.message);
   }
 }
 
-function doLogin() {
-  const id = document.getElementById("selMembre").value;
-  const pass = document.getElementById("inpPass").value.trim();
-  const errEl = document.getElementById("errMsg");
-  errEl.textContent = "";
-  if (!id) { errEl.textContent = "Sélectionnez un membre."; return; }
-  const m = MEMBRES[id];
-  if (!m || m.mot_de_passe !== pass) {
-    errEl.textContent = "Mot de passe incorrect.";
+async function verifierSemaine() {
+  const now = Date.now();
+  const semainesRef = db.ref("semaines");
+  let action = null;
+
+  const result = await semainesRef.transaction((current) => {
+    action = null;
+    const semaines = current || {};
+    const list = Object.entries(semaines).map(([id, s]) => ({ id, ...s }));
+    const active = list.find((s) => s.bloquee !== true);
+
+    // Cas 1 : aucune semaine active du tout → filet de sécurité.
+    if (!active) {
+      const bounds = limitesSemaine(now);
+      const id = semainesRef.push().key;
+      const nom = nomAutoSemaine(bounds.debut, bounds.fin);
+      action = { type: "created", id, nom };
+      return { ...semaines, [id]: { nom, bloquee: false, createdAt: now, debut: bounds.debut, fin: bounds.fin, verrouAt: bounds.verrouAt } };
+    }
+
+    // Cas 2 : la date de verrouillage de la semaine active est dépassée
+    // (même si on a raté le moment exact à cause d'une panne, on rattrape
+    // toujours correctement grâce à cette date stockée, sans dérive).
+    if (active.verrouAt && now >= active.verrouAt) {
+      const bounds = prochainesBornes(active);
+      const newId = semainesRef.push().key;
+      const nomSuivante = nomAutoSemaine(bounds.debut, bounds.fin);
+      action = { type: "closed_and_created", closedId: active.id, closedNom: active.nom, newId, newNom: nomSuivante };
+      return {
+        ...semaines,
+        [active.id]: { ...active, bloquee: true, closedAt: now },
+        [newId]: { nom: nomSuivante, bloquee: false, createdAt: now, debut: bounds.debut, fin: bounds.fin, verrouAt: bounds.verrouAt },
+      };
+    }
+
+    return current;
+  });
+
+  if (!result.committed || !action) return;
+
+  if (action.type === "created") {
+    console.log("✅ Semaine créée automatiquement (filet de sécurité) :", action.nom);
+  } else if (action.type === "closed_and_created") {
+    console.log(`✅ Semaine "${action.closedNom}" clôturée, "${action.newNom}" ouverte.`);
+    const resume = await construireResume(action.closedId, action.closedNom);
+    const cfgSnap = await db.ref("config/discord_webhook_semaine").once("value");
+    const webhook = cfgSnap.val();
+    if (webhook) await envoyerWebhookResume(webhook, resume, action.closedNom);
+  }
+}
+
+// ---------- Discord client ----------
+const client = new Client({
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
+});
+
+client.once(Events.ClientReady, async (c) => {
+  console.log(`🤖 Connecté en tant que ${c.user.tag}`);
+  verifierSemaine();
+  setInterval(verifierSemaine, 60 * 1000); // toutes les 1 minute
+  await publierModeleAbsenceSiAbsent();
+  await publierTenueSiAbsent();
+});
+
+const MARQUEUR_TENUE = "TENUE_VOLTA";
+
+async function publierTenueSiAbsent() {
+  console.log("🔍 publierTenueSiAbsent — démarrage, CHANNEL_ID_TENUE =", CHANNEL_ID_TENUE);
+  try {
+    const channel = await client.channels.fetch(CHANNEL_ID_TENUE);
+    if (!channel) { console.log("🔍 Salon tenue introuvable (fetch renvoie null)."); return; }
+    console.log("🔍 Salon tenue trouvé :", channel.name || channel.id);
+    const pinned = await channel.messages.fetchPinned();
+    console.log("🔍 Messages épinglés existants :", pinned.size);
+    const dejaPoste = pinned.some((m) => m.author.id === client.user.id && m.embeds[0]?.footer?.text === MARQUEUR_TENUE);
+    if (dejaPoste) { console.log("🔍 Déjà publié précédemment, on ne repost pas."); return; }
+
+    const msg = await channel.send({
+      embeds: [{
+        title: "👔 TENUE OBLIGATOIRE",
+        description:
+          "**Tenues rouge ou noir obligatoire.**\n\n" +
+          "Faut qu'il y ait du rouge obligatoirement pour toute la team.",
+        color: 0xc41e22,
+        thumbnail: { url: "https://antho6262.github.io/volta/img/logo.png" },
+        footer: { text: MARQUEUR_TENUE },
+      }],
+    });
+    await msg.pin().catch((e) => console.log("🔍 Échec de l'épinglage (mais message envoyé) :", e.message));
+    console.log("📌 Message tenue publié et épinglé.");
+  } catch (e) {
+    console.error("Erreur publication tenue:", e);
+  }
+}
+
+const MARQUEUR_MODELE_ABSENCE = "MODELE_ABSENCE_VOLTA";
+
+async function publierModeleAbsenceSiAbsent() {
+  try {
+    const channel = await client.channels.fetch(CHANNEL_ID_ABSENCES);
+    if (!channel) return;
+    const pinned = await channel.messages.fetchPinned();
+    const dejaPoste = pinned.some((m) => m.author.id === client.user.id && m.embeds[0]?.footer?.text === MARQUEUR_MODELE_ABSENCE);
+    if (dejaPoste) return;
+
+    const msg = await channel.send({
+      embeds: [{
+        title: "📋 Modèle à respecter pour une demande d'absence",
+        description:
+          "Merci de poster ta demande **exactement** sous cette forme (copie-colle et complète) :\n\n" +
+          "```\nPrénom : \n\nDate de départ :\n\nDate de retour :\n\nRaison (facultatif) :\n```\n" +
+          "Ton message sera automatiquement transformé en fiche récapitulative dès qu'il respecte ce format.",
+        color: 0xc41e22,
+        thumbnail: { url: "https://antho6262.github.io/volta/img/logo.png" },
+        footer: { text: MARQUEUR_MODELE_ABSENCE },
+      }],
+    });
+    await msg.pin().catch(() => {});
+    console.log("📌 Modèle d'absence publié et épinglé.");
+  } catch (e) {
+    console.error("Erreur publication modèle absence:", e);
+  }
+}
+
+async function traiterMessageAbsence(message) {
+  const texte = message.content;
+
+  const mPrenom = texte.match(/pr[ée]nom\s*:\s*(.+)/i);
+  const mDepart = texte.match(/date\s*de\s*d[ée]part\s*:\s*(.+)/i);
+  const mRetour = texte.match(/date\s*de\s*retour\s*:\s*(.+)/i);
+  const mRaison = texte.match(/raison\s*(?:\(facultatif\))?\s*:\s*(.*)/i);
+
+  if (mPrenom && mDepart && mRetour) {
+    const prenom = mPrenom[1].trim();
+    const depart = mDepart[1].trim();
+    const retour = mRetour[1].trim();
+    const raison = mRaison ? mRaison[1].trim() : "";
+
+    const fields = [
+      { name: "Prénom", value: prenom || "—", inline: true },
+      { name: "Date de départ", value: depart || "—", inline: true },
+      { name: "Date de retour", value: retour || "—", inline: true },
+    ];
+    if (raison) fields.push({ name: "Raison", value: raison });
+
+    await message.channel.send({
+      embeds: [{
+        title: "🌴 Demande d'absence",
+        color: 0xc41e22,
+        fields,
+        thumbnail: { url: "https://antho6262.github.io/volta/img/logo.png" },
+        footer: { text: "VOLTA — Registre des absences" },
+      }],
+    });
+    await message.delete().catch(() => {});
+  } else {
+    const avert = await message.reply({
+      content:
+        `⚠️ ${message.author}, ton message ne respecte pas le modèle attendu. Merci de reposter avec ce format exact :\n` +
+        "```\nPrénom : \n\nDate de départ :\n\nDate de retour :\n\nRaison (facultatif) :\n```",
+    });
+    setTimeout(() => avert.delete().catch(() => {}), 15000);
+  }
+}
+
+client.on(Events.MessageCreate, async (message) => {
+  // Le salon garages doit être traité AVANT le filtre anti-bot ci-dessous :
+  // le bot qui poste les mouvements de véhicules est lui-même un compte "bot",
+  // donc il serait ignoré si on filtrait trop tôt.
+  if (message.channelId === CHANNEL_ID_GARAGES) {
+    try {
+      await traiterMessageGarage(message);
+    } catch (e) {
+      console.error("Erreur traitement message garages:", e);
+    }
     return;
   }
-  if (m.actif === false) {
-    errEl.textContent = "Compte désactivé.";
+
+  if (message.author.bot) return;
+
+  if (message.channelId === CHANNEL_ID_TENUE) {
+    if (message.author.id === client.user.id) return;
+    if (!message.content.trim()) return;
+    try {
+      await message.channel.send({
+        embeds: [{
+          title: "👔 Tenue à respecter",
+          description: message.content,
+          color: 0xc41e22,
+          thumbnail: { url: "https://antho6262.github.io/volta/img/logo.png" },
+          footer: { text: "VOLTA — Honneur · Loyauté · Silence" },
+        }],
+      });
+      await message.delete().catch(() => {});
+    } catch (e) {
+      console.error("Erreur traitement tenue:", e);
+    }
     return;
   }
-  authReady.then(user => {
-    return db.ref("sessions/" + user.uid).set(id);
-  }).then(() => {
-    setSession({ id, prenom: m.prenom, nom: m.nom || "", grade: m.grade, role: m.role || "membre" });
-    window.location.href = "pages/dashboard.html";
-  }).catch(() => {
-    errEl.textContent = "Erreur de connexion.";
-  });
-}
 
-function toggleOublie(e) {
-  e.preventDefault();
-  const wrap = document.getElementById("oublieWrap");
-  wrap.style.display = wrap.style.display === "none" ? "block" : "none";
-}
+  if (message.channelId === CHANNEL_ID_ABSENCES) {
+    if (message.author.id === client.user.id) return;
+    try {
+      await traiterMessageAbsence(message);
+    } catch (e) {
+      console.error("Erreur traitement absence:", e);
+    }
+    return;
+  }
 
-async function envoyerDemandeOubli() {
-  const id = document.getElementById("selMembre").value;
-  const msg = document.getElementById("oublieMsg");
-  if (!id) { msg.textContent = "Sélectionne d'abord ton membre dans la liste ci-dessus."; return; }
-  const m = MEMBRES[id];
-  await db.ref("reset_requests/" + id).set({
-    membre_id: id, prenom: m.prenom, nom: m.nom || "", date: new Date().toISOString().slice(0, 10), createdAt: Date.now()
-  });
-  msg.textContent = "Demande envoyée. Un admin va réinitialiser ton mot de passe.";
-}
+  // Commande !numero — carte de contact stylée (nom + téléphone).
+  if (message.content.startsWith("!numero") || message.content.startsWith("!numéro")) {
+    if (message.author.bot) return;
+    const prefixe = message.content.startsWith("!numéro") ? "!numéro" : "!numero";
+    const contenu = message.content.slice(prefixe.length).trim();
+    if (!contenu) return;
 
-document.getElementById("inpPass").addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); });
-chargerMembres();
-</script>
-</body>
-</html>
+    const lignes = contenu.split("\n").map((l) => l.trim()).filter(Boolean);
+    let nom = "";
+    let telephone = "";
+    lignes.forEach((l) => {
+      if (/^[\d\s\-.]{6,}$/.test(l)) telephone = l;
+      else if (!nom) nom = l;
+      else if (!telephone) telephone = l;
+    });
+    if (!telephone) {
+      const m = contenu.match(/([\d][\d\s\-.]{5,})/);
+      if (m) { telephone = m[1].trim(); nom = nom || contenu.replace(m[0], "").trim(); }
+    }
+
+    try {
+      await message.channel.send({
+        embeds: [{
+          title: `📱 ${nom || "Contact"}`,
+          color: 0xc41e22,
+          fields: [{ name: "Téléphone", value: `\`${telephone || "—"}\`` }],
+          thumbnail: { url: "https://antho6262.github.io/volta/img/logo.png" },
+          footer: { text: "VOLTA — Répertoire" },
+        }],
+      });
+      await message.delete().catch(() => {});
+    } catch (e) {
+      console.error("Erreur envoi embed numero:", e);
+    }
+    return;
+  }
+
+  // Commande !radio — embed "terminal de décryptage" rouge, très visuel, logo Volta.
+  if (message.content.startsWith("!radio")) {
+    if (message.author.bot) return;
+    const contenu = message.content.slice("!radio".length).trim();
+    if (!contenu) return;
+
+    const lignes = contenu.split("\n");
+    const titre = lignes[0].replace(/^#+\s*/, "").slice(0, 250);
+
+    const lignesMention = [];
+    const lignesCorps = [];
+    let frequence = null;
+    lignes.slice(1).forEach((l) => {
+      const t = l.trim();
+      if (!t) return;
+      if (/^(@|<@)/.test(t)) { lignesMention.push(t); return; }
+      const matchFreq = t.match(/(\d{3,})/);
+      if (matchFreq && !frequence) frequence = matchFreq[1];
+      else lignesCorps.push(t);
+    });
+
+    const barre = "▓".repeat(32);
+    const bloc =
+      "```ansi\n" +
+      `\u001b[2;31m${barre}\u001b[0m\n` +
+      `\u001b[1;31m>> TERMINAL DE DÉCRYPTAGE — VOLTA\u001b[0m\n` +
+      `\u001b[2;31m${barre}\u001b[0m\n\n` +
+      `\u001b[2;37m[ SIGNAL CAPTÉ ]\u001b[0m\n` +
+      (frequence ? `\u001b[1;31m>>> FRÉQUENCE : ${frequence} <<<\u001b[0m\n` : "") +
+      `\u001b[0;31m>\u001b[0m STATUT : \u001b[1;31mACTIF\u001b[0m\n\n` +
+      `\u001b[2;37mDécryptage... OK\u001b[0m\n` +
+      `\u001b[2;31m${barre}\u001b[0m\n` +
+      "```";
+
+    const description =
+      bloc + "\n" +
+      (lignesCorps.length ? "**" + lignesCorps.join("\n") + "**\n" : "") +
+      "\n🔒 *Transmission sécurisée — accès restreint aux membres autorisés*";
+
+    try {
+      await message.channel.send({
+        embeds: [{
+          title: `📡 TRANSMISSION CRYPTÉE — ${titre}`.slice(0, 256),
+          description: description.slice(0, 4096),
+          color: 0x8b1518,
+          thumbnail: { url: "https://antho6262.github.io/volta/img/logo.png" },
+          footer: { text: "VOLTA — Canal radio · Ne pas partager en dehors du cercle" },
+        }],
+      });
+      if (lignesMention.length) await message.channel.send({ content: lignesMention.join(" ") });
+      await message.delete().catch(() => {});
+    } catch (e) {
+      console.error("Erreur envoi embed radio:", e);
+    }
+    return;
+  }
+
+  // Commande !avertissement — embed rouge alerte + vraies mentions (ping réel).
+  if (message.content.startsWith("!avertissement") || message.content.startsWith("!warn")) {
+    if (message.author.bot) return;
+    const prefixe = message.content.startsWith("!avertissement") ? "!avertissement" : "!warn";
+    const contenu = message.content.slice(prefixe.length).trim();
+    if (!contenu) return;
+
+    const lignes = contenu.split("\n");
+    const titre = "⚠️ " + lignes[0].replace(/^#+\s*/, "").slice(0, 250);
+
+    // Les lignes qui sont uniquement une mention (@role / @everyone) sont sorties
+    // de l'embed et envoyées en texte brut à part, pour déclencher un vrai ping.
+    const lignesMention = [];
+    const lignesCorps = [];
+    lignes.slice(1).forEach((l) => {
+      if (/^\s*(@|<@)/.test(l.trim())) lignesMention.push(l.trim());
+      else lignesCorps.push(l);
+    });
+
+    try {
+      if (lignesMention.length) {
+        await message.channel.send({ content: lignesMention.join(" ") });
+      }
+      await message.channel.send({
+        embeds: [{
+          title: titre,
+          description: lignesCorps.join("\n").trim().slice(0, 4096),
+          color: 0x8b1518, // rouge foncé "danger" Volta
+          thumbnail: { url: "https://antho6262.github.io/volta/img/logo.png" },
+          footer: { text: "VOLTA — Avertissement officiel" },
+        }],
+      });
+      await message.delete().catch(() => {});
+    } catch (e) {
+      console.error("Erreur envoi embed avertissement:", e);
+    }
+    return;
+  }
+
+  // Commande !histoire — poste le texte suivant en embed stylé Volta,
+  // avec le logo en vignette, puis supprime le message brut.
+  if (message.content.startsWith("!histoire")) {
+    if (message.author.bot) return;
+    const contenu = message.content.slice("!histoire".length).trim();
+    if (!contenu) return;
+
+    const lignes = contenu.split("\n");
+    const titre = lignes[0].replace(/^#+\s*/, "").slice(0, 256);
+    const corps = lignes.slice(1).join("\n").trim() || contenu;
+
+    try {
+      await message.channel.send({
+        embeds: [{
+          title: titre,
+          description: corps.slice(0, 4096),
+          color: 0xc41e22, // rouge Volta
+          thumbnail: { url: "https://antho6262.github.io/volta/img/logo.png" },
+          footer: { text: "VOLTA — Honneur · Loyauté · Silence" },
+        }],
+      });
+      await message.delete().catch(() => {});
+    } catch (e) {
+      console.error("Erreur envoi embed histoire:", e);
+    }
+  }
+});
+
+client.login(DISCORD_TOKEN);
