@@ -1,4 +1,6 @@
-# ⚔️ VOLTA — Contexte complet du projet (à jour)
+# ⚔️ VOLTA — Contexte complet (site + bot Discord)
+
+> À coller en début de nouvelle conversation pour ne pas tout réexpliquer.
 
 ## INFORMATIONS GÉNÉRALES
 - **Nom du groupe** : Volta
@@ -6,106 +8,130 @@
 - **Type** : Faction FiveM / GTA RP, Los Santos
 - **Fondateur** : Tony Diaz (membre `tony_diaz`, grade "Fondateur", role admin, protégé — non supprimable)
 - **Site web** : https://antho6262.github.io/klan-nostrad-site/
-- **Repo GitHub** : https://github.com/Antho6262/klan-nostrad-site
-- **Dossier local** : `C:\Users\amalh\Desktop\Klan Nostrad\klan-nostrad-site`
+- **Repo GitHub (site)** : https://github.com/Antho6262/klan-nostrad-site — dossier local : `C:\Users\amalh\Desktop\Klan Nostrad\klan-nostrad-site`
+- **Repo GitHub (bot Discord)** : https://github.com/Antho6262/volta-bot (privé, **pas de git local, édition directe sur GitHub.com**)
 
-## STACK TECHNIQUE
-- Frontend : HTML/CSS/JS vanilla — GitHub Pages (statique)
-- Base de données : Firebase Realtime Database (région europe-west1)
+## ⚠️ ATTENTION — RISQUE DE MÉLANGE AVEC "KRONEN KRIEG"
+L'utilisateur gère un **autre projet en parallèle**, "Kronen Krieg" (autre site, autre repo, autre Discord/bot). Plusieurs bugs réels ont déjà été causés par du code/texte copié depuis Kronen Krieg et jamais adapté (titres de page, logo Discord, couleurs d'embed, texte "— Kronen Krieg" en dur). **Toujours vérifier qu'un fichier/ID/texte fourni concerne bien Volta.**
 
-## FIREBASE CONFIG (js/firebase-config.js)
-```javascript
-const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyCDJiMzRhILU2vs1OvUowFW00Fn-of6p_k",
-  authDomain: "klan-nostrad.firebaseapp.com",
-  databaseURL: "https://klan-nostrad-default-rtdb.europe-west1.firebasedatabase.app",
-  projectId: "klan-nostrad",
-  storageBucket: "klan-nostrad.firebasestorage.app",
-  messagingSenderId: "745141888334",
-  appId: "1:745141888334:web:de8e93ee0eb2ae39876a1f",
-  measurementId: "G-PCJ6QGNDTE"
-};
+## ⚠️ SERVEUR DISCORD — CHANGEMENT RÉCENT
+Le bot a été **déplacé vers un nouveau serveur Discord** (le nom affiché est "VOLTA π | FLASHBACK FA", ID serveur `1521529278364389587`) — retiré de l'ancien serveur Volta. Salons connus sur ce nouveau serveur :
+- **Salon absences** : `1521529291257675991`
+- **Salon garages** : à confirmer si pas encore communiqué (l'ancien ID `1501354760442347600` était sur l'ancien serveur, probablement invalide maintenant)
+
+---
+
+## 🌐 LE SITE (klan-nostrad-site)
+
+### Stack
+- Frontend HTML/CSS/JS vanilla, hébergé sur GitHub Pages (statique)
+- Base de données : Firebase Realtime Database (europe-west1)
+- **Presque toutes les pages sont en écoute Firebase temps réel** (`.on("value")`) — toute donnée modifiée par un membre apparaît instantanément chez tous les autres, sans rafraîchir
+
+### Fichiers clés
+```
+klan-nostrad-site/
+├── index.html
+├── css/style.css
+├── img/{background.png, logo.png}
+├── img/armes/ (photos d'armes détourées : m9a3, vortex_full, micro_smg, sns, sns_pico, glock, glock17)
+├── js/app.js              ← NAV_ITEMS (sidebar) + initShell + indicateur temps réel 🟢/🔴
+├── js/firebase-config.js  ← FIREBASE_CONFIG, db, authReady, requireSession, canAccess, pathToRoot,
+│                             PAGES_DISPO, et TOUS les utilitaires (entries, toast, uid, formatMoney,
+│                             todayISO, logout). Fichier propre, correctement "Volta" (vérifié).
+└── pages/ (dashboard, tracker, armurerie, fourriere, stats, stock, quotas, blanchiment,
+            paye, transactions, taxes, admin, profil, labo, objectifs, sanctions)
 ```
 
-## PALETTE
-Rouge (`#c41e22`) + gris/noir + blanc. Danger = rouge foncé (`#8b1518`). Plus de doré.
+### Palette
+Rouge `#c41e22` + gris/noir + blanc. Danger = rouge foncé `#8b1518`.
 
-## STRUCTURE DU SITEµ
-klan-nostrad-site/
-├── index.html          ← Connexion — "VOLTA", "Honneur · Loyauté · Silence", trim() mdp, "Mot de passe oublié ?"
-├── css/style.css        ← Thème rouge
-├── img/background.png + logo.png  ← Logo Volta
-├── js/app.js            ← Sidebar "VOLTA", NAV_ITEMS
-├── js/firebase-config.js
-└── pages/
-├── dashboard.html, tracker.html, labo.html, stock.html
-├── quotas.html, stats.html, blanchiment.html, paye.html
-├── transactions.html, taxes.html, admin.html, profil.html
+### Pages temps réel — état
+**OK (temps réel complet)** : dashboard, stock, tracker, armurerie, quotas, transactions, taxes, sanctions, profil, objectifs, stats, paye, labo, blanchiment, fourriere.
+**Partiellement fait** : admin.html → uniquement l'onglet **Semaines** est en temps réel ; les autres onglets (Membres, Stock, Actions, Quotas, Grades, Visibilité, Permissions, Config, Audit) rechargent encore classiquement après action.
 
-Pages supprimées : objectifs, sanctions, logs, tv, consommation.
+### 🐛 Bug majeur trouvé et corrigé dans admin.html
+Les fonctions `logAudit`, `prochainesBornes`, `nomAutoSemaine`, `creerSemaineSuivante`, `majStatsEtBadges`, `envoyerWebhookEmbed` étaient **appelées mais jamais définies nulle part** → chaque action admin (créer/bloquer semaine, modifier membre/stock/etc.) plantait juste après l'écriture Firebase, empêchant tout rafraîchissement automatique. **Corrigé** : toutes ces fonctions sont maintenant définies localement dans `admin.html`, avec les vraies constantes Volta (`VOLTA_LOGO_URL`, `VOLTA_COLOR_STEEL`) à la place d'anciennes constantes `KK_LOGO_URL`/`KK_COLOR_STEEL` qui pointaient vers Kronen Krieg.
 
-## AUTH
-- Firebase Anonymous Authentication activé
-- Login (index.html) : après vérif mot_de_passe + actif, `signInAnonymously()` puis écrit `sessions/{uid} = membreId`
-- Rules Firebase conditionnent write sur `actif === true` via `root.child('sessions').child(auth.uid)`
+### Armurerie
+Type d'arme = texte libre (codes internes B1, B10, MSGS2...). Champ séparé "Modèle (photo)" = catalogue prédéfini avec aperçu auto (M9A3, Vortex Full, Micro SMG, SNS, SNS Pico, Glock, Glock 17). Bouton "+ Importer" pour upload manuel si pas dans le catalogue.
 
-## FIREBASE — NŒUDS CLÉS
-- `sessions/{uid}` : membreId lié à la session Firebase Auth anonyme
-- `membres/{id}` : prenom, nom, grade, mot_de_passe, actif, role, quota
-- `grades/{id}` : nom, ordre
-- `visibilite_grades/{gradeNom}/{page}` : true/false — page ∈ {quotas, stats, paye, tracker, labo}
-- `actions/{semaineId}/{id}` : produit_drogue_id (présent si cat_variable), participants_ids/noms (Armurerie/Fleeca)
-- `stock/{catId}/produits/{id}` : nom, prix, stock, seuil, recipe (optionnel Labo)
-- `labo_stock/{membreId}/{produitId}` : stock PERSONNEL produits finis
-- `labo_stock_commun/{produitId}` : stock COMMUN ingrédients
-- `events_drogue/{id}` : debut, fin (timestamps), taux (% drogue), taux_actions (% actions), nom
-- `reset_requests/{membreId}` : demandes mot de passe oublié
-- `transactions/{id}` : inclut membre_id, prenom_membre
-- `config` : blanchiment_taux (35), taux_paye_drogue (20), taux_paye_autres (45)
+### Fourrière (nouvel onglet)
+Sorties/rangements de véhicules, score = sorties − rangements, actif = semaine active (comme Tracker/Quotas). Import par copier-coller des messages Discord en filet de secours, mais **l'essentiel se fait automatiquement via le bot** (voir plus bas). Ajoutée à `NAV_ITEMS` (app.js) et `PAGES_DISPO` (firebase-config.js).
 
-## QUOTAS
-- Global : filtre `!a.produit_drogue_id` (exclut drogue ET labo)
-- Par catégorie variable : généré automatiquement
-- Logique dupliquée dans `quotas.html` ET `admin.html` onglet Quotas
+### Quotas
+Catégorie "Labo" explicitement exclue des quotas par produit (fix appliqué dans `quotas.html` ET `admin.html`).
 
-## TRACKER
-- Labo exclu de la liste d'actions
-- Armurerie/Fleeca : équipe sans minimum, coéquipiers sans action comptée
-- Historique : sélecteur 10/30/50/Tout
-- Bannière event animée si event actif selon l'action sélectionnée
+### Tracker
+Historique en temps réel, + sélecteur de semaine (consulter n'importe quelle semaine, pas juste l'active).
 
-## LABO
-- Bootstrap auto (crée stock/labo_cat + action "Labo" si absents)
-- Ingrédients → stock COMMUN ; Produits finis → stock PERSO
-- Catalogue gérable dans Admin → Stock catégorie Labo
-- Page Stock connectée à labo_stock_commun
+### Blanchiment
+Bug corrigé : les 3 écritures (blanchiments/argent sale/argent propre) utilisent maintenant **un seul ID partagé** (avant : 3 ID différents, rollback "Annuler" pas fiable).
 
-## PAYE
-- Sale par défaut. Propre → -blanchiment_taux% auto
-- Montant calculé (lecture seule), paiement à 0 autorisé
-- Events : taux drogue et/ou actions appliqués par action selon createdAt
-- Armurerie/Fleeca : gains divisés entre participants
-- Gains arrondis (Math.round)
+### Transactions
+Export CSV disponible (bouton dans Historique).
 
-## BLANCHIMENT
-- Bouton Annuler (admin) : supprime + rollback argent
+### Firebase — nœuds clés
+`sessions`, `membres`, `grades`, `visibilite_grades`, `actions/{semaineId}/{id}` (argent_sale, argent_propre, gains_totaux, produit_drogue, quantite, resultat), `stock`, `labo_stock`, `labo_stock_commun`, `armurerie/{id}`, `fourriere/{semaineId}/{id}`, `semaines/{id}` (nom, bloquee, createdAt, closedAt, resume, **debut, fin, verrouAt**), `config` (blanchiment_taux, taux_paye_drogue, taux_paye_autres, **discord_webhook_semaine**), `permissions`, `audit`.
 
-## EVENTS
-- Admin → Config → "🎯 Events — Taux spéciaux"
-- Bannière animée sur Dashboard et Tracker
-- Paye applique le bon taux selon createdAt de chaque action
+---
 
-## MOT DE PASSE OUBLIÉ
-- Login → reset_requests / Admin → Membres → panneau 🔔
+## 🤖 LE BOT DISCORD (volta-bot)
 
-## ADMIN
-- Onglets : Semaines / Membres / Stock / Actions / Quotas / Grades / Visibilité / Permissions / Config
-- Visibilité : matrice grade × page (distinct de Permissions)
+### Hébergement
+- Repo GitHub `Antho6262/volta-bot` — **édition directe sur GitHub.com** (pas de git local pour ce repo)
+- Déployé sur **Render.com** (Web Service, plan Free), redéploie automatiquement à chaque push
+- URL du service : `https://volta-bot-xclj.onrender.com`
+- **UptimeRobot** configuré (ping /5min) pour empêcher la mise en veille du plan gratuit Render
+- Nom du bot sur Discord : **Volta Secrétaire**
+- Variables d'environnement Render : `DISCORD_BOT_TOKEN`, `DISCORD_CHANNEL_ID_GARAGES`, `FIREBASE_SERVICE_ACCOUNT` (JSON complet), `FIREBASE_DB_URL`
+- Historique d'hébergement : bot-hosting.net (abandonné, système de pièces contraignant) → ecloudserv.fr (abandonné, pannes de plateforme répétées) → **Render.com (actuel, stable)**
 
-## POINTS D'ATTENTION
-1. Toujours trier en JS, pas via Firebase orderByChild
-2. Règles Firebase mode test expirent à 30 jours
-3. Solde = cumul depuis le début, pas par semaine
-4. Après git push : 60s + Ctrl+F5
-5. Quota → modifier dans quotas.html ET admin.html
-6. Fichiers modifiés ici ne sont pas auto dans le repo local — télécharger et remplacer manuellement
+### Fonctionnalités (`index.js`)
+1. **Connexion permanente** (discord.js) — point vert visible en continu.
+2. **Import automatique Fourrière** : écoute `CHANNEL_ID_GARAGES` en temps réel, parse "X a sorti/rangé un(e) Y ... : PLAQUE" (nettoie les `**` Markdown Discord des noms/plaques capturés — bug corrigé), fait correspondre au membre Firebase, écrit dans `fourriere/{semaineActive}`.
+   - ⚠️ Piège corrigé : le filtre anti-bot (`if (message.author.bot) return`) doit être vérifié **après** le traitement du salon garages, car le bot qui poste les mouvements de véhicules est lui-même un compte "bot" Discord — sinon ses messages sont ignorés silencieusement.
+3. **Gestion automatique des semaines** (remplace l'ancien système GitHub Actions, abandonné) :
+   - Vérifie chaque minute.
+   - Dates ancrées Europe/Paris (`getParisParts`, `limitesSemaine`, `prochainesBornes`) — logique reprise de Kronen Krieg mais avec l'authentification Firebase Admin de Volta.
+   - Chaque semaine a `debut`, `fin`, `verrouAt` (timestamp exact de clôture).
+   - Compare `now >= verrouAt` (pas juste "sommes-nous dimanche 19h") → **rattrapage fiable** même après une panne d'hébergeur prolongée, sans dérive.
+   - Transaction atomique Firebase → jamais de doublon même en cas d'exécutions concurrentes.
+   - Format de nom : `"Semaine du JJ/MM au JJ/MM"`.
+   - Envoie le résumé sur le webhook `config/discord_webhook_semaine` à la clôture.
+   - ⚠️ Les semaines créées avant cette mise à jour n'ont pas de `verrouAt` — leur toute première clôture doit se faire manuellement une fois (bouton Admin), ensuite tout s'enchaîne seul.
+4. **Résumé de semaine enrichi** (bot ET bouton manuel "Bloquer + Résumé" dans admin.html, les deux alignés) : actions, gains sale/propre, classement par nombre d'actions, **+ détail des ventes de drogue par produit ("Ventes (X au total — Y$)")**, **+ détail "Qui a vendu quoi" par membre**.
+5. **Salon absences** (`CHANNEL_ID_ABSENCES = "1521529291257675991"`) : format attendu —
+   ```
+   Prénom :
+   Date de départ :
+   Date de retour :
+   Raison (facultatif) :
+   ```
+   Si respecté → embed rouge Volta stylé (logo en vignette), message brut supprimé. Sinon → rappel du format (auto-supprimé après 15s).
+   **Un message-modèle est publié et épinglé automatiquement** au démarrage du bot (une seule fois, jamais en double) pour que tout le monde voie le format à suivre sans avoir à se tromper d'abord.
+6. **Commandes texte manuelles** (tapées dans un salon, message brut supprimé après traitement) :
+   - `!histoire <titre>\n<texte>` → embed stylé rouge Volta + logo (lore du Klan).
+   - `!avertissement` / `!warn` → embed rouge alerte ; les lignes de mention (`@role`) sont extraites et envoyées en texte brut séparé (un ping dans un embed ne notifie personne sur Discord).
+   - `!radio` → embed "terminal de décryptage" (bloc ```ansi``` rouge, bordures ▓, met en évidence un numéro détecté).
+   - `!numero` / `!numéro` → carte de contact stylée (nom + téléphone en bloc code).
+7. Petit serveur HTTP (`express`) sur `/` uniquement pour les pings Render/UptimeRobot.
+
+### Fichiers du bot
+- `index.js` — tout le code
+- `package.json` — dépendances : `discord.js`, `express`, `firebase-admin`, **`@firebase/app`** (à installer explicitement en plus de `firebase-admin`, sinon `Cannot find module '@firebase/app'` au démarrage)
+
+### Config Discord bot (portail développeur)
+- **Message Content Intent** activé (obligatoire pour lire le contenu/embeds des messages).
+- **"Requires OAuth2 Code Grant"** doit être **désactivé** (sinon erreur "Integration requires code grant" lors de l'invitation sur un nouveau serveur).
+- Permissions d'invitation utilisées : Administrateur (permissions=8) pour simplifier, ou a minima View Channels / Send Messages / Read Message History / Embed Links / Manage Messages (pour épingler).
+
+---
+
+## POINTS D'ATTENTION GÉNÉRAUX
+1. Toujours trier en JS, jamais via `orderByChild` Firebase.
+2. Solde = cumul depuis le début, pas par semaine.
+3. Après un push du **site** : Ctrl+F5 une fois, puis plus besoin de rafraîchir (temps réel) sauf sur les onglets Admin non convertis.
+4. Après une modif du **bot** : juste éditer `index.js` sur GitHub.com → commit → Render redéploie seul (~30-60s), rien d'autre à faire.
+5. Ne jamais coller de token/clé privée en clair dans le chat — si ça arrive, la considérer comme compromise et la régénérer.
+6. Toujours vérifier qu'un fichier/ID/texte concerne bien Volta et pas Kronen Krieg avant de le réutiliser.
