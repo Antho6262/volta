@@ -105,6 +105,9 @@ async function bootstrap() {
   const found = Object.entries(actions).find(([, a]) => a.nom === "Labo");
   if (found) {
     LABO_ACTION_ID = found[0];
+    if (found[1].cat_variable !== "labo_cat") {
+      await db.ref("actions_dispo/" + found[0] + "/cat_variable").set("labo_cat");
+    }
   } else {
     LABO_ACTION_ID = "labo";
     await db.ref("actions_dispo/labo").set({ nom: "Labo", montant_sale: 0, montant_propre: 0, recipe: [], cat_variable: "labo_cat" });
