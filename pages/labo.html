@@ -230,6 +230,14 @@ async function ajouterProduction() {
     const snapCommun = await refCommun.once("value");
     const currentCommun = Number(snapCommun.val()) || 0;
     await refCommun.set(currentCommun + qte);
+
+    // Si ce produit fini est lié à un produit vendable (ex: Vente de Drogue), on crédite aussi ce stock-là.
+    if (prod.venteCatId && prod.venteProdId) {
+      const refVente = db.ref(`stock/${prod.venteCatId}/produits/${prod.venteProdId}/stock`);
+      const snapVente = await refVente.once("value");
+      const currentVente = Number(snapVente.val()) || 0;
+      await refVente.set(currentVente + qte);
+    }
   }
 
   toast("Production enregistrée.");
@@ -243,8 +251,18 @@ async function afficherStock() {
   const produitsIds = Object.entries(LABO_PRODUITS).filter(([, p]) => p.recipe && p.recipe.length).map(([pid]) => pid);
   if (!produitsIds.length) { zone.innerHTML = '<p class="muted small">Aucun produit fini Labo configuré.</p>'; return; }
 
-  zone.innerHTML = `<table><thead><tr><th>Produit</th><th>Stock commun</th></tr></thead><tbody>
-    ${produitsIds.map(pid => `<tr><td>${LABO_PRODUITS[pid].nom}</td><td>${Number(LABO_PRODUITS[pid].stock) || 0}</td></tr>`).join("")}
+  const stockAll = RAW.stockAll || {};
+  zone.innerHTML = `<table><thead><tr><th>Produit</th><th>Stock commun (Labo)</th><th>Stock vendable lié</th></tr></thead><tbody>
+    ${produitsIds.map(pid => {
+      const p = LABO_PRODUITS[pid];
+      let venteTxt = "—";
+      if (p.venteCatId && p.venteProdId) {
+        const catVente = stockAll[p.venteCatId];
+        const prodVente = catVente && catVente.produits ? catVente.produits[p.venteProdId] : null;
+        venteTxt = prodVente ? `${catVente.nom} — ${prodVente.nom} : ${Number(prodVente.stock) || 0}` : "produit lié introuvable";
+      }
+      return `<tr><td>${p.nom}</td><td>${Number(p.stock) || 0}</td><td>${venteTxt}</td></tr>`;
+    }).join("")}
   </tbody></table>`;
 }
 
@@ -256,7 +274,15 @@ async function supprimerProduction(semaineId, id, membreId, pid, qte, resultat) 
     const currentCommun = Number(snapCommun.val()) || 0;
     await refCommun.set(Math.max(0, currentCommun - qte));
 
-    const recipe = (LABO_PRODUITS[pid] || {}).recipe || [];
+    const prod = LABO_PRODUITS[pid] || {};
+    if (prod.venteCatId && prod.venteProdId) {
+      const refVente = db.ref(`stock/${prod.venteCatId}/produits/${prod.venteProdId}/stock`);
+      const snapVente = await refVente.once("value");
+      const currentVente = Number(snapVente.val()) || 0;
+      await refVente.set(Math.max(0, currentVente - qte));
+    }
+
+    const recipe = prod.recipe || [];
     for (const ligne of recipe) {
       const refIng = db.ref(`labo_stock_commun/${ligne.ingredientId}`);
       const snapIng = await refIng.once("value");
@@ -296,6 +322,7 @@ let HISTORIQUE = [];
   db.ref("semaines").on("value", majSemaines);
   db.ref("membres").on("value", snap => { RAW.membres = snap.val() || {}; renderTout(); });
   db.ref("stock/labo_cat").on("value", snap => { RAW.stockLabo = snap.val() || {}; renderTout(); });
+  db.ref("stock").on("value", snap => { RAW.stockAll = snap.val() || {}; renderTout(); });
   db.ref("labo_stock").on("value", snap => { RAW.laboStock = snap.val() || {}; renderTout(); });
   db.ref("labo_stock_commun").on("value", snap => { RAW.laboCommun = snap.val() || {}; renderTout(); });
   db.ref("visibilite_grades").on("value", snap => { RAW.visi = snap.val() || {}; renderTout(); });

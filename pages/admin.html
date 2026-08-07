@@ -443,23 +443,27 @@ async function tabStock(body) {
       <div class="panel">
         <div class="panel-head"><h2>${c.emoji || "📦"} ${c.nom}</h2>
           <span class="btn btn-sm btn-danger" onclick="suppCategorie('${c.id}')">Supprimer la catégorie</span></div>
-        <table><thead><tr><th>Produit</th><th>Prix</th><th>Stock</th><th>Seuil</th>${c.nom === "Labo" ? "<th>Recette</th>" : ""}<th></th></tr></thead>
+        <table><thead><tr><th>Produit</th><th>Prix</th><th>Stock</th><th>Seuil</th>${c.nom === "Labo" ? "<th>Recette</th><th>Vend vers</th>" : ""}<th></th></tr></thead>
           <tbody>${entries(c.produits).length ? entries(c.produits).map(([pid, p]) => `
             <tr>
               <td><input type="text" value="${p.nom}" id="edNom_${c.id}_${pid}" style="min-width:140px;"></td>
               <td><input type="number" value="${p.prix || 0}" id="edPrix_${c.id}_${pid}" style="max-width:90px;"></td>
               <td><input type="number" value="${p.stock || 0}" id="edStock_${c.id}_${pid}" style="max-width:90px;"></td>
               <td><input type="number" value="${p.seuil || 0}" id="edSeuil_${c.id}_${pid}" style="max-width:90px;"></td>
-              ${c.nom === "Labo" ? `<td class="small muted">${(p.recipe || []).map(l => `${l.qty}x ${(c.produits[l.ingredientId] || {}).nom || "?"}`).join(", ") || "—"}</td>` : ""}
+              ${c.nom === "Labo" ? `<td class="small muted">${(p.recipe || []).map(l => `${l.qty}x ${(c.produits[l.ingredientId] || {}).nom || "?"}`).join(", ") || "—"}</td>
+              <td><select id="edVente_${c.id}_${pid}" style="min-width:160px;">
+                <option value="">— Aucun —</option>
+                ${cats.filter(cc => cc.id !== c.id).flatMap(cc => entries(cc.produits).map(([opid, op]) => `<option value="${cc.id}::${opid}" ${p.venteCatId === cc.id && p.venteProdId === opid ? "selected" : ""}>${cc.emoji || ""} ${cc.nom} — ${op.nom}</option>`)).join("")}
+              </select></td>` : ""}
               <td style="white-space:nowrap;">
                 <span class="btn btn-sm btn-gold" onclick="modifierProduit('${c.id}','${pid}')">Enregistrer</span>
                 <span class="btn btn-sm btn-danger" onclick="suppProduit('${c.id}','${pid}')">Suppr.</span>
               </td>
             </tr>
-          `).join("") : `<tr class="empty-row"><td colspan="${c.nom === "Labo" ? 6 : 5}">Aucun produit</td></tr>`}</tbody></table>
+          `).join("") : `<tr class="empty-row"><td colspan="${c.nom === "Labo" ? 7 : 5}">Aucun produit</td></tr>`}</tbody></table>
         ${c.nom === "Labo" ? `
         <div class="panel mt16" style="background:var(--bg-1);">
-          <p class="small muted">Un produit sans recette est un ingrédient brut. Un produit avec recette consomme les ingrédients (× quantité) du stock commun pour produire le résultat.</p>
+          <p class="small muted">Un produit sans recette est un ingrédient brut. Un produit avec recette consomme les ingrédients (× quantité) du stock commun pour produire le résultat. Si ce produit fini doit alimenter un stock vendable (ex: Vente de Drogue), choisis-le en "Produit vendable lié" : chaque production créditera aussi ce stock-là.</p>
           <div class="row">
             <div><label class="l">Nom du produit</label><input type="text" id="laboNom" placeholder="ex: Champignon rouge, Black Trip..."></div>
           </div>
@@ -469,6 +473,14 @@ async function tabStock(body) {
             <div style="display:flex;align-items:flex-end;"><button class="btn" onclick="ajouterLigneRecetteLabo()">Ajouter à la recette</button></div>
           </div>
           <div id="laboRecetteEnCours" class="small muted mt8">Aucune ligne de recette en cours.</div>
+          <div class="row mt8">
+            <div><label class="l">Produit vendable lié (optionnel)</label>
+              <select id="laboVenteLien">
+                <option value="">— Aucun (stock Labo uniquement) —</option>
+                ${cats.filter(cc => cc.id !== c.id).flatMap(cc => entries(cc.produits).map(([pid, p]) => `<option value="${cc.id}::${pid}">${cc.emoji || ""} ${cc.nom} — ${p.nom}</option>`)).join("")}
+              </select>
+            </div>
+          </div>
           <button class="btn btn-gold mt8" onclick="ajouterProduitLabo('${c.id}')">Enregistrer le produit</button>
         </div>` : `
         <div class="row mt16">
@@ -494,10 +506,17 @@ function ajouterLigneRecetteLabo() {
 async function ajouterProduitLabo(catId) {
   const nom = document.getElementById("laboNom").value.trim();
   if (!nom) { toast("Nom requis.", true); return; }
-  await db.ref("stock/" + catId + "/produits/" + uid()).set({
+  const lien = document.getElementById("laboVenteLien").value;
+  const data = {
     nom, prix: 0, stock: 0, seuil: 0,
     recipe: RECETTE_LABO_EN_COURS.map(l => ({ ingredientId: l.ingredientId, qty: l.qty }))
-  });
+  };
+  if (lien) {
+    const [venteCatId, venteProdId] = lien.split("::");
+    data.venteCatId = venteCatId;
+    data.venteProdId = venteProdId;
+  }
+  await db.ref("stock/" + catId + "/produits/" + uid()).set(data);
   RECETTE_LABO_EN_COURS = [];
   toast("Produit Labo enregistré.");
   loadTab("stock");
@@ -527,12 +546,25 @@ async function ajouterProduit(catId) {
 async function modifierProduit(catId, pid) {
   const nom = document.getElementById(`edNom_${catId}_${pid}`).value.trim();
   if (!nom) { toast("Nom requis.", true); return; }
-  await db.ref(`stock/${catId}/produits/${pid}`).update({
+  const update = {
     nom,
     prix: Number(document.getElementById(`edPrix_${catId}_${pid}`).value) || 0,
     stock: Number(document.getElementById(`edStock_${catId}_${pid}`).value) || 0,
     seuil: Number(document.getElementById(`edSeuil_${catId}_${pid}`).value) || 0
-  });
+  };
+  const selVente = document.getElementById(`edVente_${catId}_${pid}`);
+  if (selVente) {
+    const lien = selVente.value;
+    if (lien) {
+      const [venteCatId, venteProdId] = lien.split("::");
+      update.venteCatId = venteCatId;
+      update.venteProdId = venteProdId;
+    } else {
+      update.venteCatId = null;
+      update.venteProdId = null;
+    }
+  }
+  await db.ref(`stock/${catId}/produits/${pid}`).update(update);
   logAudit("Produit modifié", nom);
   toast("Produit mis à jour.");
   loadTab("stock");
