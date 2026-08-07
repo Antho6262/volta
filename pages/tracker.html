@@ -312,7 +312,7 @@ function renderTable() {
       <td><span class="badge ${a.resultat === 'Réussite' ? 'badge-ok' : 'badge-fail'}">${a.resultat}</span></td>
       <td>${formatMoney(a.argent_sale)}</td>
       <td>${formatMoney(a.argent_propre)}</td>
-      <td>${a.membre_id === SESSION.id || canDelete ? `<span class="btn btn-sm" onclick="modifierAction('${a.id}')">Modifier</span>` : ""} ${canDelete ? `<span class="btn btn-sm btn-danger" onclick="supprimerAction('${a.id}')">Suppr.</span>` : ""}</td>
+      <td>${a.membre_id === SESSION.id || canDelete ? `<span class="btn btn-sm" onclick="modifierAction('${a.id}')">Modifier</span>` : ""} ${a.membre_id === SESSION.id || canDelete ? `<span class="btn btn-sm btn-danger" onclick="supprimerAction('${a.id}')">Suppr.</span>` : ""}</td>
     </tr>`).join("") : '<tr class="empty-row"><td colspan="8">Aucune action enregistrée</td></tr>';
 }
 
