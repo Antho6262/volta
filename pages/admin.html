@@ -99,7 +99,7 @@ function shadeColor(hex, percent) {
 
 async function genererBanniereResumeWeb(resume, nomSemaine) {
   await chargerPolicesBanniere();
-  const W = 1100, H = 1500;
+  const W = 1100, H = 2600;
   const canvas = document.createElement("canvas");
   canvas.width = W; canvas.height = H;
   const ctx = canvas.getContext("2d");
@@ -215,15 +215,34 @@ async function genererBanniereResumeWeb(resume, nomSemaine) {
     py += resume.detailVentesArr.length * 30 + 15;
   }
 
+  if (resume.detailVentesParMembreArr && resume.detailVentesParMembreArr.length) {
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#ffffff"; ctx.font = "26px Anton";
+    ctx.fillText("QUI A VENDU QUOI", W / 2, py);
+    py += 32;
+
+    ctx.textAlign = "left";
+    resume.detailVentesParMembreArr.forEach((m) => {
+      ctx.fillStyle = "#ffffff"; ctx.font = "700 17px Poppins"; ctx.fillText(m.prenom, 90, py);
+      ctx.fillStyle = "#a8a8a8"; ctx.font = "16px Poppins";
+      const detail = m.produits.map(p => `${p.produit} : ${p.qte}`).join("   ·   ");
+      ctx.fillText(detail, 90, py + 22);
+      py += 52;
+    });
+    py += 5;
+  }
+
   const footerY = py + 55;
   const finalH = footerY + 35;
 
   ctx.textAlign = "center"; ctx.fillStyle = "#5a5a5a"; ctx.font = "15px Poppins";
   ctx.fillText("VOLTA — Honneur · Loyauté · Silence", W / 2, footerY);
 
+  const SCALE = 2;
   const finalCanvas = document.createElement("canvas");
-  finalCanvas.width = W; finalCanvas.height = finalH;
+  finalCanvas.width = W * SCALE; finalCanvas.height = finalH * SCALE;
   const fctx = finalCanvas.getContext("2d");
+  fctx.scale(SCALE, SCALE);
   fctx.drawImage(canvas, 0, 0, W, finalH, 0, 0, W, finalH);
 
   const vg = fctx.createRadialGradient(W / 2, finalH * 0.3, 100, W / 2, finalH * 0.3, W * 0.9);
@@ -490,7 +509,10 @@ async function bloquerSemaine(id, nom) {
   if (webhook) {
     const classementArr = Object.entries(parMembre).sort((a, b) => b[1] - a[1]).map(([prenom, n]) => ({ prenom, n }));
     const detailVentesArr = Object.entries(parProduit).sort((a, b) => b[1] - a[1]).map(([produit, qte]) => ({ produit, qte }));
-    const resumeObj = { gainsSale, gainsPropre, reussites, echecs, nbActions: actions.length, classementArr, totalVendu, gainsVentes, detailVentesArr };
+    const detailVentesParMembreArr = Object.entries(parMembreVentes)
+      .sort((a, b) => Object.values(b[1]).reduce((s, n) => s + n, 0) - Object.values(a[1]).reduce((s, n) => s + n, 0))
+      .map(([prenom, produits]) => ({ prenom, produits: Object.entries(produits).map(([produit, qte]) => ({ produit, qte })) }));
+    const resumeObj = { gainsSale, gainsPropre, reussites, echecs, nbActions: actions.length, classementArr, totalVendu, gainsVentes, detailVentesArr, detailVentesParMembreArr };
 
     try {
       const blob = await genererBanniereResumeWeb(resumeObj, nom);
