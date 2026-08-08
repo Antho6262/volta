@@ -44,6 +44,203 @@ async function envoyerWebhookEmbed(webhook, embed) {
   } catch (e) { console.error("webhook KO", e.message); }
 }
 
+/* ---------- Bannière image du résumé de semaine (même style que le bot Discord) ---------- */
+let _policesBanniereChargees = false;
+function chargerPolicesBanniere() {
+  if (_policesBanniereChargees) return Promise.resolve();
+  return new Promise((resolve) => {
+    let link = document.getElementById("volta-banner-fonts");
+    if (!link) {
+      link = document.createElement("link");
+      link.id = "volta-banner-fonts";
+      link.rel = "stylesheet";
+      link.href = "https://fonts.googleapis.com/css2?family=Anton&family=Poppins:wght@400;600;700;800&display=swap";
+      document.head.appendChild(link);
+    }
+    const finir = () => {
+      Promise.all([
+        document.fonts.load("58px Anton"),
+        document.fonts.load("400 16px Poppins"),
+        document.fonts.load("600 16px Poppins"),
+        document.fonts.load("700 16px Poppins"),
+        document.fonts.load("800 16px Poppins"),
+      ]).then(() => { _policesBanniereChargees = true; resolve(); }).catch(() => resolve());
+    };
+    if (link.sheet) finir(); else link.onload = finir;
+    setTimeout(finir, 2500); // filet de sécurité si onload ne se déclenche pas
+  });
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+function roundRectTop(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x, y + h);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h);
+  ctx.closePath();
+}
+function shadeColor(hex, percent) {
+  const num = parseInt(hex.replace("#", ""), 16);
+  let r = (num >> 16) + percent, g = ((num >> 8) & 0x00ff) + percent, b = (num & 0x0000ff) + percent;
+  r = Math.min(255, Math.max(0, r)); g = Math.min(255, Math.max(0, g)); b = Math.min(255, Math.max(0, b));
+  return `rgb(${r},${g},${b})`;
+}
+
+async function genererBanniereResumeWeb(resume, nomSemaine) {
+  await chargerPolicesBanniere();
+  const W = 1100, H = 1500;
+  const canvas = document.createElement("canvas");
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d");
+
+  const bgGrad = ctx.createLinearGradient(0, 0, 0, H);
+  bgGrad.addColorStop(0, "#1a0506"); bgGrad.addColorStop(0.5, "#0d0203"); bgGrad.addColorStop(1, "#000000");
+  ctx.fillStyle = bgGrad; ctx.fillRect(0, 0, W, H);
+
+  ctx.save(); ctx.globalAlpha = 0.04; ctx.strokeStyle = "#ffffff";
+  for (let i = -H; i < W; i += 40) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i + H, H); ctx.stroke(); }
+  ctx.restore();
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#8b1518"; ctx.font = "24px Poppins"; ctx.fillText("V O L T A", W / 2, 70);
+  ctx.fillStyle = "#ffffff"; ctx.font = "58px Anton"; ctx.fillText("RÉSUMÉ DE LA SEMAINE", W / 2, 135);
+  ctx.fillStyle = "#a8a8a8"; ctx.font = "26px Poppins"; ctx.fillText(nomSemaine, W / 2, 172);
+
+  const gradLine = ctx.createLinearGradient(80, 0, W - 80, 0);
+  gradLine.addColorStop(0, "rgba(196,30,34,0)"); gradLine.addColorStop(0.5, "#c41e22"); gradLine.addColorStop(1, "rgba(196,30,34,0)");
+  ctx.strokeStyle = gradLine; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(80, 195); ctx.lineTo(W - 80, 195); ctx.stroke();
+
+  const totalGains = resume.gainsSale + resume.gainsPropre;
+  const gy = 225, gh = 150;
+  const gainGrad = ctx.createLinearGradient(0, gy, 0, gy + gh);
+  gainGrad.addColorStop(0, "#3a0708"); gainGrad.addColorStop(1, "#1a0304");
+  ctx.fillStyle = gainGrad; roundRect(ctx, 60, gy, W - 120, gh, 18); ctx.fill();
+  ctx.strokeStyle = "#c41e22"; ctx.lineWidth = 1.5; roundRect(ctx, 60, gy, W - 120, gh, 18); ctx.stroke();
+  ctx.fillStyle = "#e0a0a0"; ctx.font = "600 22px Poppins"; ctx.fillText("GAIN TOTAL DE LA SEMAINE", W / 2, gy + 45);
+  ctx.fillStyle = "#ffffff"; ctx.font = "64px Anton"; ctx.fillText(formatMoney(totalGains), W / 2, gy + 115);
+
+  const sy = gy + gh + 30, sh = 90;
+  const cols = [
+    { label: "ACTIONS", value: `${resume.nbActions}`, sub: `${resume.reussites} réussies · ${resume.echecs} échouées` },
+    { label: "GAINS SALE", value: formatMoney(resume.gainsSale), sub: "argent non blanchi" },
+    { label: "GAINS PROPRE", value: formatMoney(resume.gainsPropre), sub: "argent blanchi" },
+  ];
+  const colW = (W - 120 - 2 * 20) / 3;
+  cols.forEach((c, i) => {
+    const cx = 60 + i * (colW + 20);
+    ctx.fillStyle = "#140506"; roundRect(ctx, cx, sy, colW, sh, 14); ctx.fill();
+    ctx.strokeStyle = "rgba(196,30,34,0.4)"; ctx.lineWidth = 1; roundRect(ctx, cx, sy, colW, sh, 14); ctx.stroke();
+    ctx.fillStyle = "#8b8b8b"; ctx.font = "600 16px Poppins"; ctx.fillText(c.label, cx + colW / 2, sy + 28);
+    ctx.fillStyle = "#ffffff"; ctx.font = "800 26px Poppins"; ctx.fillText(c.value, cx + colW / 2, sy + 58);
+    ctx.fillStyle = "#6b6b6b"; ctx.font = "13px Poppins"; ctx.fillText(c.sub, cx + colW / 2, sy + 78);
+  });
+
+  let py = sy + sh + 55;
+  ctx.fillStyle = "#ffffff"; ctx.font = "34px Anton"; ctx.fillText("PODIUM", W / 2, py);
+
+  const podium = resume.classementArr.slice(0, 3);
+  const medailleColors = ["#ffd54a", "#d9d9d9", "#c98a4b"];
+  const barHeights = [130, 100, 78];
+  const order = [1, 0, 2];
+  const podiumW = 260, gap = 24;
+  const totalPodiumW = podiumW * 3 + gap * 2;
+  const startX = (W - totalPodiumW) / 2;
+  const contentTop = py + 90;
+  const barTopMax = contentTop + 130;
+  const podiumBaseY = barTopMax + barHeights[0];
+
+  order.forEach((rankIdx) => {
+    const m = podium[rankIdx];
+    if (!m) return;
+    const visualPos = order.indexOf(rankIdx);
+    const bx = startX + visualPos * (podiumW + gap);
+    const bh = barHeights[rankIdx];
+    const by = podiumBaseY - bh;
+
+    ctx.fillStyle = "#ffffff"; ctx.font = "700 22px Poppins"; ctx.fillText(m.prenom, bx + podiumW / 2, by - 45);
+    ctx.fillStyle = "#a8a8a8"; ctx.font = "16px Poppins"; ctx.fillText(`${m.n} action(s)`, bx + podiumW / 2, by - 22);
+
+    ctx.beginPath(); ctx.arc(bx + podiumW / 2, by - 95, 24, 0, Math.PI * 2);
+    ctx.fillStyle = medailleColors[rankIdx]; ctx.fill();
+    ctx.fillStyle = "#1a0506"; ctx.font = "800 22px Poppins"; ctx.fillText(`${rankIdx + 1}`, bx + podiumW / 2, by - 87);
+
+    const barGrad = ctx.createLinearGradient(0, by, 0, by + bh);
+    barGrad.addColorStop(0, medailleColors[rankIdx]); barGrad.addColorStop(1, shadeColor(medailleColors[rankIdx], -40));
+    ctx.fillStyle = barGrad; roundRectTop(ctx, bx, by, podiumW, bh, 10); ctx.fill();
+  });
+
+  py = podiumBaseY + 45;
+
+  const reste = resume.classementArr.slice(3, 9);
+  if (reste.length) {
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#8b8b8b"; ctx.font = "600 18px Poppins"; ctx.fillText("CLASSEMENT", 70, py);
+    reste.forEach((m, i) => {
+      const ry = py + 38 + i * 34;
+      ctx.fillStyle = "#c9c9c9"; ctx.font = "600 17px Poppins"; ctx.fillText(`${i + 4}.`, 70, ry);
+      ctx.fillStyle = "#ffffff"; ctx.font = "17px Poppins"; ctx.fillText(m.prenom, 105, ry);
+      ctx.textAlign = "right"; ctx.fillStyle = "#8b8b8b"; ctx.fillText(`${m.n} action(s)`, W - 70, ry);
+      ctx.textAlign = "left";
+    });
+    py += 38 + reste.length * 34 + 25;
+  }
+
+  if (resume.totalVendu > 0) {
+    ctx.textAlign = "center";
+    ctx.strokeStyle = gradLine;
+    ctx.beginPath(); ctx.moveTo(80, py); ctx.lineTo(W - 80, py); ctx.stroke();
+    py += 40;
+    ctx.fillStyle = "#ffffff"; ctx.font = "26px Anton";
+    ctx.fillText(`VENTES — ${resume.totalVendu} au total (${formatMoney(resume.gainsVentes)})`, W / 2, py);
+    py += 40;
+    ctx.textAlign = "left";
+    resume.detailVentesArr.forEach((v, i) => {
+      const ry = py + i * 30;
+      ctx.fillStyle = "#c9c9c9"; ctx.font = "600 16px Poppins"; ctx.fillText(v.produit, 90, ry);
+      ctx.textAlign = "right"; ctx.fillStyle = "#e0a0a0"; ctx.fillText(`${v.qte}`, W - 90, ry);
+      ctx.textAlign = "left";
+    });
+    py += resume.detailVentesArr.length * 30 + 15;
+  }
+
+  const footerY = py + 55;
+  const finalH = footerY + 35;
+
+  ctx.textAlign = "center"; ctx.fillStyle = "#5a5a5a"; ctx.font = "15px Poppins";
+  ctx.fillText("VOLTA — Honneur · Loyauté · Silence", W / 2, footerY);
+
+  const finalCanvas = document.createElement("canvas");
+  finalCanvas.width = W; finalCanvas.height = finalH;
+  const fctx = finalCanvas.getContext("2d");
+  fctx.drawImage(canvas, 0, 0, W, finalH, 0, 0, W, finalH);
+
+  const vg = fctx.createRadialGradient(W / 2, finalH * 0.3, 100, W / 2, finalH * 0.3, W * 0.9);
+  vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,0,0,0.55)");
+  fctx.fillStyle = vg; fctx.fillRect(0, 0, W, finalH);
+  fctx.strokeStyle = "#c41e22"; fctx.lineWidth = 3; fctx.strokeRect(10, 10, W - 20, finalH - 20);
+
+  return new Promise((resolve) => finalCanvas.toBlob((blob) => resolve(blob), "image/png"));
+}
+
+async function envoyerWebhookImage(webhook, blob, filename) {
+  const form = new FormData();
+  form.append("payload_json", JSON.stringify({ embeds: [{ color: 0xc41e22, image: { url: "attachment://" + filename } }] }));
+  form.append("files[0]", blob, filename);
+  await fetch(webhook, { method: "POST", body: form });
+}
+
 /* Dates ancrées Europe/Paris (identique à la logique du bot Discord). */
 function getParisParts(ts) {
   const fmt = new Intl.DateTimeFormat("en-CA", {
@@ -291,23 +488,32 @@ async function bloquerSemaine(id, nom) {
   const cfgSnap = await db.ref("config/discord_webhook_semaine").once("value");
   const webhook = cfgSnap.val();
   if (webhook) {
-    const fields = [
-      { name: "Actions", value: `${actions.length} (✅ ${reussites} / ❌ ${echecs})`, inline: true },
-      { name: "Gains sale", value: formatMoney(gainsSale), inline: true },
-      { name: "Gains propre", value: formatMoney(gainsPropre), inline: true },
-    ];
-    if (totalVendu > 0) {
-      fields.push({ name: `Ventes (${totalVendu} au total — ${formatMoney(gainsVentes)})`, value: detailVentes || "—" });
-      fields.push({ name: "Qui a vendu quoi", value: detailVentesParMembre || "—" });
-    }
-    fields.push({ name: "Classement", value: classement || "—" });
+    const classementArr = Object.entries(parMembre).sort((a, b) => b[1] - a[1]).map(([prenom, n]) => ({ prenom, n }));
+    const detailVentesArr = Object.entries(parProduit).sort((a, b) => b[1] - a[1]).map(([produit, qte]) => ({ produit, qte }));
+    const resumeObj = { gainsSale, gainsPropre, reussites, echecs, nbActions: actions.length, classementArr, totalVendu, gainsVentes, detailVentesArr };
 
-    await envoyerWebhookEmbed(webhook, {
-      title: `📋 RÉSUMÉ — ${nom}`,
-      color: VOLTA_COLOR_STEEL,
-      thumbnail: { url: VOLTA_LOGO_URL },
-      fields,
-    });
+    try {
+      const blob = await genererBanniereResumeWeb(resumeObj, nom);
+      await envoyerWebhookImage(webhook, blob, "resume.png");
+    } catch (e) {
+      console.error("Échec génération bannière (repli texte) :", e);
+      const fields = [
+        { name: "Actions", value: `${actions.length} (✅ ${reussites} / ❌ ${echecs})`, inline: true },
+        { name: "Gains sale", value: formatMoney(gainsSale), inline: true },
+        { name: "Gains propre", value: formatMoney(gainsPropre), inline: true },
+      ];
+      if (totalVendu > 0) {
+        fields.push({ name: `Ventes (${totalVendu} au total — ${formatMoney(gainsVentes)})`, value: detailVentes || "—" });
+        fields.push({ name: "Qui a vendu quoi", value: detailVentesParMembre || "—" });
+      }
+      fields.push({ name: "Classement", value: classement || "—" });
+      await envoyerWebhookEmbed(webhook, {
+        title: `📋 RÉSUMÉ — ${nom}`,
+        color: VOLTA_COLOR_STEEL,
+        thumbnail: { url: VOLTA_LOGO_URL },
+        fields,
+      });
+    }
     toast("Résumé envoyé sur Discord.");
   }
 
