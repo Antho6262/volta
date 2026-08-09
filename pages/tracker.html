@@ -117,7 +117,7 @@ function onActionChange() {
     wrap.style.display = "none";
     sel.innerHTML = "";
   }
-  document.getElementById("equipeWrap").style.display = (act && act.nom === "Fleeca") ? "block" : "none";
+  document.getElementById("equipeWrap").style.display = (act && (act.nom === "Fleeca" || act.nom === "Armurerie")) ? "block" : "none";
   renderEquipeCheckboxes();
 
   // bannière event drogue
@@ -145,7 +145,7 @@ function onActionChange() {
 
 function estActionEquipe() {
   const act = ACTIONS_DISPO[document.getElementById("fAction").value];
-  return !!(act && act.nom === "Fleeca");
+  return !!(act && (act.nom === "Fleeca" || act.nom === "Armurerie"));
 }
 
 function renderEquipeCheckboxes() {
@@ -230,7 +230,7 @@ async function ajouterAction() {
   if (act.cat_variable && !document.getElementById("fProduitVar").value) { toast("Choisissez un produit.", true); return; }
 
   let participantsIds = [];
-  if (act.nom === "Fleeca") {
+  if (act.nom === "Fleeca" || act.nom === "Armurerie") {
     participantsIds = Array.from(document.querySelectorAll(".chkEquipe:checked")).map(c => c.value);
   }
 
