@@ -226,17 +226,20 @@ async function ajouterProduction() {
       await refIng.set(Math.max(0, currentIng - ligne.qty * qte));
     }
 
-    const refCommun = db.ref(`stock/labo_cat/produits/${pid}/stock`);
-    const snapCommun = await refCommun.once("value");
-    const currentCommun = Number(snapCommun.val()) || 0;
-    await refCommun.set(currentCommun + qte);
-
-    // Si ce produit fini est lié à un produit vendable (ex: Vente de Drogue), on crédite aussi ce stock-là.
+    // Si ce produit fini est lié à un produit vendable (ex: Vente de Drogue), on crédite CE stock-là
+    // uniquement (un seul chiffre partagé, plus de double compteur qui finit par diverger).
+    // Sans lien configuré, on garde l'ancien comportement (stock Labo interne).
     if (prod.venteCatId && prod.venteProdId) {
       const refVente = db.ref(`stock/${prod.venteCatId}/produits/${prod.venteProdId}/stock`);
       const snapVente = await refVente.once("value");
       const currentVente = Number(snapVente.val()) || 0;
       await refVente.set(currentVente + qte);
+      await db.ref(`stock/labo_cat/produits/${pid}/stock`).set(currentVente + qte);
+    } else {
+      const refCommun = db.ref(`stock/labo_cat/produits/${pid}/stock`);
+      const snapCommun = await refCommun.once("value");
+      const currentCommun = Number(snapCommun.val()) || 0;
+      await refCommun.set(currentCommun + qte);
     }
   }
 
@@ -252,16 +255,17 @@ async function afficherStock() {
   if (!produitsIds.length) { zone.innerHTML = '<p class="muted small">Aucun produit fini Labo configuré.</p>'; return; }
 
   const stockAll = RAW.stockAll || {};
-  zone.innerHTML = `<table><thead><tr><th>Produit</th><th>Stock commun (Labo)</th><th>Stock vendable lié</th></tr></thead><tbody>
+  zone.innerHTML = `<table><thead><tr><th>Produit</th><th>Stock</th></tr></thead><tbody>
     ${produitsIds.map(pid => {
       const p = LABO_PRODUITS[pid];
-      let venteTxt = "—";
+      let stockAffiche = Number(p.stock) || 0;
       if (p.venteCatId && p.venteProdId) {
         const catVente = stockAll[p.venteCatId];
         const prodVente = catVente && catVente.produits ? catVente.produits[p.venteProdId] : null;
-        venteTxt = prodVente ? `${catVente.nom} — ${prodVente.nom} : ${Number(prodVente.stock) || 0}` : "produit lié introuvable";
+        // Lecture en direct du stock vendable lié : reste toujours identique, même après une vente.
+        stockAffiche = prodVente ? (Number(prodVente.stock) || 0) : stockAffiche;
       }
-      return `<tr><td>${p.nom}</td><td>${Number(p.stock) || 0}</td><td>${venteTxt}</td></tr>`;
+      return `<tr><td>${p.nom}</td><td>${stockAffiche}</td></tr>`;
     }).join("")}
   </tbody></table>`;
 }
@@ -269,17 +273,19 @@ async function afficherStock() {
 async function supprimerProduction(semaineId, id, membreId, pid, qte, resultat) {
   if (!confirm("Supprimer cette production ? Les ingrédients consommés seront restitués au stock commun.")) return;
   if (resultat === "Réussite") {
-    const refCommun = db.ref(`stock/labo_cat/produits/${pid}/stock`);
-    const snapCommun = await refCommun.once("value");
-    const currentCommun = Number(snapCommun.val()) || 0;
-    await refCommun.set(Math.max(0, currentCommun - qte));
-
     const prod = LABO_PRODUITS[pid] || {};
     if (prod.venteCatId && prod.venteProdId) {
       const refVente = db.ref(`stock/${prod.venteCatId}/produits/${prod.venteProdId}/stock`);
       const snapVente = await refVente.once("value");
       const currentVente = Number(snapVente.val()) || 0;
-      await refVente.set(Math.max(0, currentVente - qte));
+      const nouveauVente = Math.max(0, currentVente - qte);
+      await refVente.set(nouveauVente);
+      await db.ref(`stock/labo_cat/produits/${pid}/stock`).set(nouveauVente);
+    } else {
+      const refCommun = db.ref(`stock/labo_cat/produits/${pid}/stock`);
+      const snapCommun = await refCommun.once("value");
+      const currentCommun = Number(snapCommun.val()) || 0;
+      await refCommun.set(Math.max(0, currentCommun - qte));
     }
 
     const recipe = prod.recipe || [];
