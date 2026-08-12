@@ -61,7 +61,17 @@ function renderStockTabs() {
       <div class="panel-head"><h2>${cat ? (cat.emoji || "📦") : ""} ${cat ? cat.nom : ""}</h2></div>
       <table><thead><tr><th>Produit</th><th>Stock</th></tr></thead>
         <tbody>${produits.length
-          ? produits.map(([, p]) => `<tr><td>${p.nom}</td><td>${Number(p.stock) || 0}</td></tr>`).join("")
+          ? produits.map(([, p]) => {
+              let stockVal;
+              if (p.venteCatId && p.venteProdId) {
+                const catVente = DATA.stock[p.venteCatId];
+                const prodVente = catVente && catVente.produits ? catVente.produits[p.venteProdId] : null;
+                stockVal = prodVente ? (Number(prodVente.stock) || 0) : (Number(p.stock) || 0);
+              } else {
+                stockVal = Number(p.stock) || 0;
+              }
+              return `<tr><td>${p.nom}</td><td>${stockVal}</td></tr>`;
+            }).join("")
           : '<tr class="empty-row"><td colspan="2">Aucun produit dans cette catégorie</td></tr>'}</tbody></table>
     </div>
   `;
