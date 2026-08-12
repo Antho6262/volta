@@ -34,12 +34,35 @@ function renderContent() {
       <div class="card"><h3>Gain Total Vente de Drogue</h3><div class="stat-num gold" id="gainsTotaux">0 $</div><div class="stat-sub">cette semaine</div></div>
     </div>
 
-    <div class="grid cols-2 mt24">
-      <div class="panel">
-        <div class="panel-head"><h2>💊 Stock Drogue</h2></div>
-        <table><thead><tr><th>Produit</th><th>Stock</th></tr></thead>
-          <tbody id="tblStockDrogue"><tr class="empty-row"><td colspan="2">Chargement…</td></tr></tbody></table>
-      </div>
+    <div class="tabs mt24" id="dashTabsBar"></div>
+    <div id="dashTabContent"></div>
+  `;
+}
+
+let ACTIVE_DASH_TAB = null;
+function switchDashTab(catId) {
+  ACTIVE_DASH_TAB = catId;
+  renderStockTabs();
+}
+
+function renderStockTabs() {
+  const catList = entries(DATA.stock);
+  if (!catList.length) { document.getElementById("dashTabsBar").innerHTML = ""; document.getElementById("dashTabContent").innerHTML = ""; return; }
+  if (!ACTIVE_DASH_TAB || !catList.find(([id]) => id === ACTIVE_DASH_TAB)) ACTIVE_DASH_TAB = catList[0][0];
+
+  document.getElementById("dashTabsBar").innerHTML = catList.map(([catId, cat]) =>
+    `<div class="tab ${ACTIVE_DASH_TAB === catId ? "active" : ""}" onclick="switchDashTab('${catId}')">${cat.emoji || "📦"} ${cat.nom}</div>`
+  ).join("");
+
+  const cat = DATA.stock[ACTIVE_DASH_TAB];
+  const produits = cat ? entries(cat.produits) : [];
+  document.getElementById("dashTabContent").innerHTML = `
+    <div class="panel">
+      <div class="panel-head"><h2>${cat ? (cat.emoji || "📦") : ""} ${cat ? cat.nom : ""}</h2></div>
+      <table><thead><tr><th>Produit</th><th>Stock</th></tr></thead>
+        <tbody>${produits.length
+          ? produits.map(([, p]) => `<tr><td>${p.nom}</td><td>${Number(p.stock) || 0}</td></tr>`).join("")
+          : '<tr class="empty-row"><td colspan="2">Aucun produit dans cette catégorie</td></tr>'}</tbody></table>
     </div>
   `;
 }
@@ -93,12 +116,8 @@ function renderDerived() {
   document.getElementById("nbReussites").textContent = reussites + " réussites";
   document.getElementById("gainsTotaux").textContent = formatMoney(gains);
 
-  // stock drogue uniquement
-  const catDrogue = entries(DATA.stock).find(([, cat]) => (cat.nom || "").toLowerCase() === "drogue");
-  const produitsDrogue = catDrogue ? entries(catDrogue[1].produits) : [];
-  document.getElementById("tblStockDrogue").innerHTML = produitsDrogue.length
-    ? produitsDrogue.map(([, p]) => `<tr><td>${p.nom}</td><td>${p.stock}</td></tr>`).join("")
-    : '<tr class="empty-row"><td colspan="2">Aucun produit dans la catégorie Drogue</td></tr>';
+  // stock — tous les onglets par catégorie
+  renderStockTabs();
 }
 
 (async function () {

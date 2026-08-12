@@ -15,71 +15,131 @@
 <script src="../js/firebase-config.js"></script>
 <script src="../js/app.js"></script>
 <script>
-let SESSION, STOCK = {};
+let SESSION, STOCK = {}, LABO_COMMUN = {};
+let ACTIVE_TAB = "argent";
 
 function renderContent() {
   document.getElementById("content").innerHTML = `
     <h1>Stock</h1>
     <div class="sigil-rule"></div>
-
-    <div class="grid cols-2">
-      <div class="card"><h3>💵 Solde argent sale</h3><div class="stat-num" id="soldeSale">0 $</div></div>
-      <div class="card"><h3>💚 Solde argent propre</h3><div class="stat-num gold" id="soldePropre">0 $</div></div>
-    </div>
-
-    <div class="panel mt16">
-      <div class="panel-head"><h2>Argent — mouvement manuel</h2></div>
-      <div class="row">
-        <div><label class="l">Compte</label><select id="gCompte"><option value="sale">💵 Argent Sale</option><option value="propre">💚 Argent Propre</option></select></div>
-        <div><label class="l">Mouvement</label><select id="gSens"><option value="Entrée">+ Entrée</option><option value="Sortie">− Sortie</option></select></div>
-        <div><label class="l">Montant ($)</label><input type="number" id="gMontant" value="0"></div>
-      </div>
-      <div class="row mt8">
-        <div style="flex:2"><label class="l">Description</label><input type="text" id="gDesc" placeholder="Ex: Apport initial"></div>
-        <div><label class="l">Responsable</label><input type="text" id="gResponsable" value="${SESSION.prenom}"></div>
-        <div style="display:flex;align-items:flex-end;"><button class="btn btn-primary" style="width:100%" onclick="mouvementArgent()">Enregistrer</button></div>
-      </div>
-    </div>
-
-    <div class="panel">
-      <div class="panel-head"><h2>Historique des mouvements d'argent</h2>
-        <select id="filtLimiteArgent" onchange="chargerArgent()"><option value="10">Afficher 10</option><option value="30">Afficher 30</option><option value="50">Afficher 50</option><option value="9999">Tout afficher</option></select>
-      </div>
-      <table><thead><tr><th>Date</th><th>Compte</th><th>Type</th><th>Montant</th><th>Description</th><th>Responsable</th>${SESSION.role === 'admin' ? '<th></th>' : ''}</tr></thead>
-        <tbody id="tblArgent"><tr class="empty-row"><td colspan="7">Chargement…</td></tr></tbody></table>
-    </div>
-
-    <div class="panel">
-      <div class="panel-head"><h2>Mouvement manuel — stock produits</h2></div>
-      <div class="row">
-        <div><label class="l">Produit</label><select id="fProduit"></select></div>
-        <div><label class="l">Quantité</label><input type="number" id="fQte" value="1"></div>
-        <div><label class="l">Sens</label><select id="fSens"><option value="retrait">Retirer</option><option value="ajout">Ajouter</option></select></div>
-        <div style="display:flex;align-items:flex-end;"><button class="btn btn-primary" style="width:100%" onclick="mouvement()">Appliquer</button></div>
-      </div>
-      <p class="small muted mt8">Pour créer des catégories/produits ou fixer un seuil d'alerte, va dans Admin → Stock.</p>
-    </div>
-
-    <div id="catsWrap"></div>
+    <div class="tabs mt16" id="stockTabsBar"></div>
+    <div id="stockTabContent"></div>
   `;
+}
+
+function switchTab(tabId) {
+  ACTIVE_TAB = tabId;
+  renderStock();
 }
 
 function calcSolde(val) {
   return entries(val).reduce((acc, [, l]) => acc + (l.type === "Sortie" ? -Number(l.montant || 0) : Number(l.montant || 0)), 0);
 }
 
+function badgeNiveau(p) {
+  const stock = Number(p.stock) || 0, seuil = Number(p.seuil) || 0;
+  if (stock <= seuil) return '<span class="badge badge-fail">Rupture</span>';
+  if (stock <= seuil * 1.5) return '<span class="badge badge-warn">Faible</span>';
+  return '<span class="badge badge-ok">OK</span>';
+}
+
+function renderStock() {
+  const catList = entries(STOCK);
+  if (!catList.find(([id]) => id === ACTIVE_TAB) && ACTIVE_TAB !== "argent") ACTIVE_TAB = "argent";
+
+  const tabsBar = document.getElementById("stockTabsBar");
+  tabsBar.innerHTML = `
+    <div class="tab ${ACTIVE_TAB === "argent" ? "active" : ""}" onclick="switchTab('argent')">💵 Argent</div>
+    ${catList.map(([catId, cat]) => `<div class="tab ${ACTIVE_TAB === catId ? "active" : ""}" onclick="switchTab('${catId}')">${cat.emoji || "📦"} ${cat.nom}</div>`).join("")}
+  `;
+
+  const zone = document.getElementById("stockTabContent");
+
+  if (ACTIVE_TAB === "argent") {
+    zone.innerHTML = `
+      <div class="grid cols-2 mt16">
+        <div class="card"><h3>💵 Solde argent sale</h3><div class="stat-num" id="soldeSale">0 $</div></div>
+        <div class="card"><h3>💚 Solde argent propre</h3><div class="stat-num gold" id="soldePropre">0 $</div></div>
+      </div>
+
+      <div class="panel mt16">
+        <div class="panel-head"><h2>Argent — mouvement manuel</h2></div>
+        <div class="row">
+          <div><label class="l">Compte</label><select id="gCompte"><option value="sale">💵 Argent Sale</option><option value="propre">💚 Argent Propre</option></select></div>
+          <div><label class="l">Mouvement</label><select id="gSens"><option value="Entrée">+ Entrée</option><option value="Sortie">− Sortie</option></select></div>
+          <div><label class="l">Montant ($)</label><input type="number" id="gMontant" value="0"></div>
+        </div>
+        <div class="row mt8">
+          <div style="flex:2"><label class="l">Description</label><input type="text" id="gDesc" placeholder="Ex: Apport initial"></div>
+          <div><label class="l">Responsable</label><input type="text" id="gResponsable" value="${SESSION.prenom}"></div>
+          <div style="display:flex;align-items:flex-end;"><button class="btn btn-primary" style="width:100%" onclick="mouvementArgent()">Enregistrer</button></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Historique des mouvements d'argent</h2>
+          <select id="filtLimiteArgent" onchange="chargerArgent()"><option value="10">Afficher 10</option><option value="30">Afficher 30</option><option value="50">Afficher 50</option><option value="9999">Tout afficher</option></select>
+        </div>
+        <table><thead><tr><th>Date</th><th>Compte</th><th>Type</th><th>Montant</th><th>Description</th><th>Responsable</th>${SESSION.role === 'admin' ? '<th></th>' : ''}</tr></thead>
+          <tbody id="tblArgent"><tr class="empty-row"><td colspan="7">Chargement…</td></tr></tbody></table>
+      </div>
+    `;
+    chargerArgent();
+    return;
+  }
+
+  const catId = ACTIVE_TAB;
+  const cat = STOCK[catId];
+  if (!cat) { zone.innerHTML = '<div class="panel"><p class="muted">Catégorie introuvable.</p></div>'; return; }
+  const isLabo = cat.nom === "Labo";
+  const produitsIds = entries(cat.produits);
+
+  zone.innerHTML = `
+    <div class="panel mt16">
+      <div class="panel-head"><h2>Mouvement manuel — ${cat.nom}</h2></div>
+      <div class="row">
+        <div><label class="l">Produit</label><select id="fProduit">
+          ${produitsIds.map(([pid, p]) => `<option value="${pid}">${p.nom}</option>`).join("") || '<option value="">Aucun produit</option>'}
+        </select></div>
+        <div><label class="l">Quantité</label><input type="number" id="fQte" value="1"></div>
+        <div><label class="l">Sens</label><select id="fSens"><option value="retrait">Retirer</option><option value="ajout">Ajouter</option></select></div>
+        <div style="display:flex;align-items:flex-end;"><button class="btn btn-primary" style="width:100%" onclick="mouvement('${catId}')">Appliquer</button></div>
+      </div>
+      <p class="small muted mt8">Pour créer des catégories/produits ou fixer un seuil d'alerte, va dans Admin → Stock.</p>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>${cat.emoji || "📦"} ${cat.nom}</h2></div>
+      <table>
+        <thead><tr><th>Produit</th><th>Prix</th><th>Stock</th><th>Seuil</th><th>Niveau</th></tr></thead>
+        <tbody>
+          ${produitsIds.length ? produitsIds.map(([pid, p]) => {
+            const stockVal = isLabo ? (Number(LABO_COMMUN[pid]) || 0) : (Number(p.stock) || 0);
+            const pAff = { ...p, stock: stockVal };
+            return `<tr><td>${p.nom}</td><td>${formatMoney(p.prix)}</td><td class="mono">${stockVal}</td><td class="mono">${p.seuil || 0}</td><td>${badgeNiveau(pAff)}</td></tr>`;
+          }).join("") : '<tr class="empty-row"><td colspan="5">Aucun produit dans cette catégorie</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
 async function chargerArgent() {
   const [snapSale, snapPropre] = await Promise.all([db.ref("argent/sale").once("value"), db.ref("argent/propre").once("value")]);
-  document.getElementById("soldeSale").textContent = formatMoney(calcSolde(snapSale.val()));
-  document.getElementById("soldePropre").textContent = formatMoney(calcSolde(snapPropre.val()));
+  const elSale = document.getElementById("soldeSale"), elPropre = document.getElementById("soldePropre");
+  if (elSale) elSale.textContent = formatMoney(calcSolde(snapSale.val()));
+  if (elPropre) elPropre.textContent = formatMoney(calcSolde(snapPropre.val()));
 
   const lignesSale = entries(snapSale.val()).map(([id, l]) => ({ id, compte: "sale", ...l }));
   const lignesPropre = entries(snapPropre.val()).map(([id, l]) => ({ id, compte: "propre", ...l }));
-  const limite = Number(document.getElementById("filtLimiteArgent")?.value) || 10;
+  const limiteEl = document.getElementById("filtLimiteArgent");
+  const limite = Number(limiteEl?.value) || 10;
   const toutes = lignesSale.concat(lignesPropre).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, limite);
   const canDelete = SESSION.role === "admin";
 
-  document.getElementById("tblArgent").innerHTML = toutes.length ? toutes.map(l => `
+  const tbl = document.getElementById("tblArgent");
+  if (!tbl) return;
+  tbl.innerHTML = toutes.length ? toutes.map(l => `
     <tr><td>${l.date}</td><td>${l.compte === 'sale' ? '💵 Sale' : '💚 Propre'}</td>
     <td><span class="badge ${l.type === 'Sortie' ? 'badge-fail' : 'badge-ok'}">${l.type}</span></td>
     <td class="mono">${formatMoney(l.montant)}</td><td>${l.description || ""}</td><td>${l.responsable || ""}</td>
@@ -111,50 +171,9 @@ async function supprimerLigneArgent(compte, id) {
   chargerArgent();
 }
 
-function badgeNiveau(p) {
-  const stock = Number(p.stock) || 0, seuil = Number(p.seuil) || 0;
-  if (stock <= seuil) return '<span class="badge badge-fail">Rupture</span>';
-  if (stock <= seuil * 1.5) return '<span class="badge badge-warn">Faible</span>';
-  return '<span class="badge badge-ok">OK</span>';
-}
-
-let LABO_COMMUN = {};
-
-function renderStock() {
-  const laboCommun = LABO_COMMUN;
-  const selProduit = document.getElementById("fProduit");
-  selProduit.innerHTML = "";
-  entries(STOCK).forEach(([catId, cat]) => {
-    entries(cat.produits).forEach(([pid, p]) => {
-      selProduit.appendChild(new Option(`${cat.emoji || ""} ${cat.nom} — ${p.nom}`, catId + "::" + pid));
-    });
-  });
-
-  const wrap = document.getElementById("catsWrap");
-  const catList = entries(STOCK);
-  wrap.innerHTML = catList.length ? catList.map(([catId, cat]) => {
-    const isLabo = cat.nom === "Labo";
-    return `
-    <div class="panel">
-      <div class="panel-head"><h2>${cat.emoji || "📦"} ${cat.nom}</h2></div>
-      <table>
-        <thead><tr><th>Produit</th><th>Prix</th><th>Stock</th><th>Seuil</th><th>Niveau</th></tr></thead>
-        <tbody>
-          ${entries(cat.produits).length ? entries(cat.produits).map(([pid, p]) => {
-            const stockVal = isLabo ? (Number(laboCommun[pid]) || 0) : (Number(p.stock) || 0);
-            const pAff = { ...p, stock: stockVal };
-            return `<tr><td>${p.nom}</td><td>${formatMoney(p.prix)}</td><td class="mono">${stockVal}</td><td class="mono">${p.seuil || 0}</td><td>${badgeNiveau(pAff)}</td></tr>`;
-          }).join("") : '<tr class="empty-row"><td colspan="5">Aucun produit dans cette catégorie</td></tr>'}
-        </tbody>
-      </table>
-    </div>`;
-  }).join("") : '<div class="panel"><p class="muted">Aucune catégorie de stock définie. Configure-les dans Admin → Stock.</p></div>';
-}
-
-async function mouvement() {
-  const val = document.getElementById("fProduit").value;
-  if (!val) { toast("Sélectionnez un produit.", true); return; }
-  const [catId, pid] = val.split("::");
+async function mouvement(catId) {
+  const pid = document.getElementById("fProduit").value;
+  if (!pid) { toast("Sélectionnez un produit.", true); return; }
   const qte = Number(document.getElementById("fQte").value) || 0;
   const sens = document.getElementById("fSens").value;
   if (qte <= 0) { toast("Quantité invalide.", true); return; }
@@ -182,7 +201,6 @@ async function mouvement() {
   renderContent();
   db.ref("stock").on("value", snap => { STOCK = snap.val() || {}; renderStock(); });
   db.ref("labo_stock_commun").on("value", snap => { LABO_COMMUN = snap.val() || {}; renderStock(); });
-  await chargerArgent();
 })();
 </script>
 </body>
