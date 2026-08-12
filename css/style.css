@@ -164,6 +164,9 @@ h1,h2,h3,h4{font-family:var(--font-display); letter-spacing:.02em; margin:0;}
 .nav-item.active{
   background:var(--steel-soft); color:var(--steel); border-color:rgba(196,30,34,.3);
 }
+.nav-chevron{margin-left:auto; font-size:11px; opacity:.6;}
+.nav-submenu{padding-left:14px; border-left:1px solid var(--line); margin:2px 0 2px 22px;}
+.nav-submenu .nav-item{font-size:13px;}
 .sidebar-foot{padding:14px 18px; border-top:1px solid var(--line);}
 .who{font-size:12.5px; color:var(--text);}
 .who b{color:var(--steel);}

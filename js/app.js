@@ -6,18 +6,31 @@
 const NAV_ITEMS = [
   { page: "dashboard",    icon: "🏠", label: "Dashboard",    file: "dashboard.html" },
   { page: "tracker",      icon: "📋", label: "Tracker",      file: "tracker.html" },
+  { page: "stock",        icon: "📦", label: "Stock",        file: "stock.html" },
+  { page: "transactions", icon: "🔁", label: "Transactions", file: "transactions.html" },
+  { page: "labo",         icon: "🧪", label: "Labo",         file: "labo.html" },
   { page: "fourriere",    icon: "🚗", label: "Fourrière",    file: "fourriere.html" },
   { page: "stats",        icon: "📊", label: "Stats",        file: "stats.html" },
-  { page: "stock",        icon: "📦", label: "Stock",        file: "stock.html" },
   { page: "quotas",       icon: "🎯", label: "Quotas",       file: "quotas.html" },
-  { page: "labo",         icon: "🧪", label: "Labo",         file: "labo.html" },
   { page: "blanchiment",  icon: "💵", label: "Blanchiment",  file: "blanchiment.html" },
   { page: "paye",         icon: "💰", label: "Paye",         file: "paye.html" },
-  { page: "transactions", icon: "🔁", label: "Transactions", file: "transactions.html" },
   { page: "taxes",        icon: "🧾", label: "Taxes",        file: "taxes.html" },
   { page: "admin",        icon: "⚙️", label: "Admin",        file: "admin.html" },
   { page: "profil",       icon: "👤", label: "Profil",       file: "profil.html" }
 ];
+
+/* Les 5 premières pages restent toujours visibles dans la sidebar ;
+   tout le reste est regroupé dans un sous-menu repliable "Plus". */
+const NAV_PRIMARY_COUNT = 5;
+
+/* Ouvre/ferme le sous-menu "Plus" dans la sidebar. */
+function toggleNavSubmenu(toggleEl) {
+  const submenu = toggleEl.nextElementSibling;
+  const chevron = toggleEl.querySelector(".nav-chevron");
+  const ouvert = submenu.style.display !== "none";
+  submenu.style.display = ouvert ? "none" : "block";
+  chevron.textContent = ouvert ? "▸" : "▾";
+}
 
 /* Construit le shell (sidebar + topbar) dans #shell, protège la page,
    et renvoie la session du membre connecté (ou redirige vers /index.html). */
@@ -40,14 +53,38 @@ async function initShell(activePage, pageTitle) {
   }
 
   const root = pathToRoot();
+  const primaryItems = NAV_ITEMS.slice(0, NAV_PRIMARY_COUNT);
+  const restItems = NAV_ITEMS.slice(NAV_PRIMARY_COUNT);
+
   let navHtml = "";
-  for (const item of NAV_ITEMS) {
+  for (const item of primaryItems) {
     const ok = await canAccess(session, item.page);
     if (!ok) continue;
     const active = item.page === activePage ? " active" : "";
     navHtml += `<a class="nav-item${active}" href="${root}pages/${item.file}">
         <span class="ic">${item.icon}</span><span class="lbl">${item.label}</span>
       </a>`;
+  }
+
+  let restHtml = "";
+  let restContainsActive = false;
+  for (const item of restItems) {
+    const ok = await canAccess(session, item.page);
+    if (!ok) continue;
+    const active = item.page === activePage ? " active" : "";
+    if (active) restContainsActive = true;
+    restHtml += `<a class="nav-item${active}" href="${root}pages/${item.file}">
+        <span class="ic">${item.icon}</span><span class="lbl">${item.label}</span>
+      </a>`;
+  }
+
+  if (restHtml) {
+    navHtml += `
+      <div class="nav-item nav-toggle" onclick="toggleNavSubmenu(this)">
+        <span class="ic">☰</span><span class="lbl">Plus</span><span class="nav-chevron">${restContainsActive ? "▾" : "▸"}</span>
+      </div>
+      <div class="nav-submenu" style="display:${restContainsActive ? "block" : "none"};">${restHtml}</div>
+    `;
   }
 
   const shellHtml = `
