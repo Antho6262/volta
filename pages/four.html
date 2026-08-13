@@ -16,15 +16,8 @@
 <script src="../js/app.js"></script>
 <script>
 let SESSION, STOCK = {}, MEMBRES = {}, FOUR_PURETE = {};
-const FOUR_CAT_ID = "four_cat";
 const PURETES = ["50", "70", "90", "99"];
 let ACTIVE_DROGUE_TAB = null;
-
-// Crée la catégorie de stock "Four" si elle n'existe pas encore (au premier chargement de la page).
-async function bootstrap() {
-  const snap = await db.ref("stock/" + FOUR_CAT_ID).once("value");
-  if (!snap.val()) await db.ref("stock/" + FOUR_CAT_ID).set({ nom: "Four", emoji: "🔥", produits: {} });
-}
 
 // Trouve la catégorie "Drogue" quel que soit son id réel.
 function getCatDrogue() {
@@ -42,31 +35,24 @@ function renderContent() {
     <div id="drogueTabContent"></div>
 
     <div class="panel mt16">
-      <div class="panel-head"><h2>Nouvelle transaction — Four</h2></div>
+      <div class="panel-head"><h2>Nouvelle vente — Four</h2></div>
       <div class="row">
         <div><label class="l">Membre</label><select id="tMembre"></select></div>
-        <div><label class="l">Type</label><select id="tType"><option value="achat">Achat</option><option value="vente">Vente</option></select></div>
-        <div><label class="l">Groupe</label><input type="text" id="tGroupe" placeholder="Nom du groupe"></div>
-        <div><label class="l">Téléphone</label><input type="tel" id="tTel" placeholder="Optionnel"></div>
-      </div>
-      <div class="row mt8">
         <div><label class="l">Produit</label><select id="tProduit"></select></div>
         <div><label class="l">Quantité</label><input type="number" id="tQte" value="1"></div>
         <div><label class="l">Prix unitaire ($)</label><input type="number" id="tPrix" value="0"></div>
       </div>
       <div class="row mt8">
-        <div><label class="l">Argent</label><select id="tTypeArgent"><option value="sale">Sale</option><option value="propre">Propre</option></select></div>
         <div><label class="l">Date</label><input type="date" id="tDate"></div>
-        <div><label class="l">Notes</label><input type="text" id="tNotes" placeholder="Optionnel"></div>
+        <div style="flex:2"><label class="l">Notes</label><input type="text" id="tNotes" placeholder="Optionnel"></div>
       </div>
-      <button class="btn btn-primary mt16" onclick="ajouterTransaction()">Enregistrer</button>
-      <p class="small muted mt8">Pour ajouter/retirer des produits au catalogue Four (matériel générique), va dans Admin → Stock → catégorie Four.</p>
+      <button class="btn btn-primary mt16" onclick="ajouterTransaction()">Enregistrer la vente</button>
     </div>
 
     <div class="panel">
       <div class="panel-head"><h2>Historique — Four</h2><button class="btn btn-sm" onclick="exporterTransactionsCSV()">⬇ Exporter CSV</button></div>
-      <table><thead><tr><th>Date</th><th>Membre</th><th>Type</th><th>Groupe</th><th>Produit</th><th>Qté</th><th>Total</th><th>Argent</th><th></th></tr></thead>
-        <tbody id="tblTransactions"><tr class="empty-row"><td colspan="9">Chargement…</td></tr></tbody></table>
+      <table><thead><tr><th>Date</th><th>Membre</th><th>Produit</th><th>Qté</th><th>Total</th><th></th></tr></thead>
+        <tbody id="tblTransactions"><tr class="empty-row"><td colspan="6">Chargement…</td></tr></tbody></table>
     </div>
   `;
   document.getElementById("tDate").value = todayISO();
@@ -142,11 +128,10 @@ async function mouvementPurete(pid, purete, sens) {
 let TRANSACTIONS_LIST = [];
 
 function exporterTransactionsCSV() {
-  if (!TRANSACTIONS_LIST.length) { toast("Aucune transaction à exporter.", true); return; }
-  const headers = ["Date", "Membre", "Type", "Groupe", "Téléphone", "Produit", "Quantité", "Prix unitaire", "Total", "Argent", "Notes"];
+  if (!TRANSACTIONS_LIST.length) { toast("Aucune vente à exporter.", true); return; }
+  const headers = ["Date", "Membre", "Produit", "Quantité", "Prix unitaire", "Total", "Notes"];
   const lignes = TRANSACTIONS_LIST.map(t => [
-    t.date, t.prenom_membre || "", t.type, t.groupe, t.telephone || "",
-    t.produit_nom, t.quantite, t.prix, t.quantite * t.prix, t.type_argent, t.notes || ""
+    t.date, t.prenom_membre || "", t.produit_nom, t.quantite, t.prix, t.quantite * t.prix, t.notes || ""
   ]);
   const esc = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const csv = [headers.map(esc).join(";"), ...lignes.map(l => l.map(esc).join(";"))].join("\r\n");
@@ -169,11 +154,11 @@ function renderProduitsMembresSelects() {
   const sel = document.getElementById("tProduit");
   const prevP = sel.value;
   sel.innerHTML = "";
-  const cat = STOCK[FOUR_CAT_ID];
-  if (cat) entries(cat.produits).forEach(([pid, p]) =>
-    sel.appendChild(new Option(p.nom, FOUR_CAT_ID + "::" + pid + "::" + (p.prix || 0)))
+  const catDrogue = getCatDrogue();
+  if (catDrogue) entries(catDrogue.produits).forEach(([pid, p]) =>
+    sel.appendChild(new Option(p.nom, catDrogue.id + "::" + pid + "::" + (p.prix || 0)))
   );
-  if (!sel.options.length) sel.innerHTML = '<option value="">Aucun produit — créez le stock dans Admin</option>';
+  if (!sel.options.length) sel.innerHTML = '<option value="">Aucune drogue — créez le stock dans Admin</option>';
   else if (prevP) sel.value = prevP;
   sel.onchange = () => { const parts = sel.value.split("::"); if (parts[2]) document.getElementById("tPrix").value = parts[2]; };
 
@@ -184,12 +169,9 @@ async function ajouterTransaction() {
   const val = document.getElementById("tProduit").value;
   if (!val) { toast("Sélectionnez un produit.", true); return; }
   const [catId, pid] = val.split("::");
-  const type = document.getElementById("tType").value;
   const qte = Number(document.getElementById("tQte").value) || 0;
   const prix = Number(document.getElementById("tPrix").value) || 0;
-  const typeArgent = document.getElementById("tTypeArgent").value;
-  const groupe = document.getElementById("tGroupe").value.trim();
-  if (!groupe || qte <= 0) { toast("Complétez le formulaire.", true); return; }
+  if (qte <= 0) { toast("Quantité invalide.", true); return; }
   const total = qte * prix;
   const prodNom = STOCK[catId].produits[pid].nom;
   const id = uid();
@@ -197,9 +179,9 @@ async function ajouterTransaction() {
   const membreId = document.getElementById("tMembre").value;
   const m = MEMBRES[membreId] || {};
   await db.ref("transactions/" + id).set({
-    type, groupe, telephone: document.getElementById("tTel").value.trim(),
+    type: "vente", source: "four", groupe: "", telephone: "",
     produit_id: pid, produit_nom: prodNom, catId, quantite: qte, prix,
-    type_argent: typeArgent, notes: document.getElementById("tNotes").value.trim(),
+    type_argent: "sale", notes: document.getElementById("tNotes").value.trim(),
     membre_id: membreId, prenom_membre: m.prenom || SESSION.prenom,
     date: document.getElementById("tDate").value || todayISO(), createdAt: Date.now()
   });
@@ -207,16 +189,16 @@ async function ajouterTransaction() {
   const stockRef = db.ref(`stock/${catId}/produits/${pid}/stock`);
   const snap = await stockRef.once("value");
   const current = Number(snap.val()) || 0;
-  await stockRef.set(type === "achat" ? current + qte : Math.max(0, current - qte));
+  await stockRef.set(Math.max(0, current - qte));
 
-  await db.ref(`argent/${typeArgent}/${id}`).set({
+  await db.ref(`argent/sale/${id}`).set({
     date: document.getElementById("tDate").value || todayISO(),
-    description: (type === "achat" ? "Achat" : "Vente") + " — " + prodNom + " x" + qte + " (" + groupe + ") [Four]",
-    type: type === "achat" ? "Sortie" : "Entrée", montant: total, responsable: SESSION.prenom, createdAt: Date.now()
+    description: "Vente — " + prodNom + " x" + qte + " [Four]",
+    type: "Entrée", montant: total, responsable: SESSION.prenom, createdAt: Date.now()
   });
 
-  toast("Transaction enregistrée.");
-  document.getElementById("tGroupe").value = ""; document.getElementById("tTel").value = ""; document.getElementById("tNotes").value = "";
+  toast("Vente enregistrée.");
+  document.getElementById("tNotes").value = "";
 }
 
 let TRANSACTIONS_RAW = {};
@@ -224,27 +206,27 @@ let TRANSACTIONS_RAW = {};
 function renderTransactions() {
   const list = entries(TRANSACTIONS_RAW)
     .map(([id, t]) => ({ id, ...t }))
-    .filter(t => t.catId === FOUR_CAT_ID)
+    .filter(t => t.source === "four")
     .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   TRANSACTIONS_LIST = list;
   const canDelete = SESSION.role === "admin";
   document.getElementById("tblTransactions").innerHTML = list.length ? list.map(t => `
-    <tr><td>${t.date}</td><td>${t.prenom_membre || "-"}</td><td><span class="badge ${t.type === 'achat' ? 'badge-warn' : 'badge-ok'}">${t.type}</span></td><td>${t.groupe}</td>
-    <td>${t.produit_nom}</td><td>${t.quantite}</td><td>${formatMoney(t.quantite * t.prix)}</td><td>${t.type_argent}</td>
+    <tr><td>${t.date}</td><td>${t.prenom_membre || "-"}</td>
+    <td>${t.produit_nom}</td><td>${t.quantite}</td><td>${formatMoney(t.quantite * t.prix)}</td>
     <td>${canDelete ? `<span class="btn btn-sm btn-danger" onclick="supprimerTransaction('${t.id}')">Suppr.</span>` : ""}</td></tr>
-  `).join("") : '<tr class="empty-row"><td colspan="8">Aucune transaction Four</td></tr>';
+  `).join("") : '<tr class="empty-row"><td colspan="6">Aucune vente Four</td></tr>';
 }
 
 async function supprimerTransaction(id) {
-  if (!confirm("Supprimer cette transaction ? Le stock et l'argent seront annulés (rollback).")) return;
+  if (!confirm("Supprimer cette vente ? Le stock et l'argent seront annulés (rollback).")) return;
   const snap = await db.ref("transactions/" + id).once("value");
   const t = snap.val();
   if (t) {
     const stockRef = db.ref(`stock/${t.catId}/produits/${t.produit_id}/stock`);
     const sSnap = await stockRef.once("value");
     const current = Number(sSnap.val()) || 0;
-    await stockRef.set(t.type === "achat" ? Math.max(0, current - t.quantite) : current + t.quantite);
-    await db.ref(`argent/${t.type_argent}/${id}`).remove();
+    await stockRef.set(current + t.quantite);
+    await db.ref(`argent/sale/${id}`).remove();
   }
   await db.ref("transactions/" + id).remove();
   toast("Transaction supprimée et rollback effectué.");
@@ -254,7 +236,6 @@ async function supprimerTransaction(id) {
   await authReady;
   SESSION = await initShell("four", "Four");
   if (!SESSION) return;
-  await bootstrap();
   renderContent();
   db.ref("stock").on("value", snap => { STOCK = snap.val() || {}; renderProduitsMembresSelects(); renderDrogueTabs(); });
   db.ref("four_purete").on("value", snap => { FOUR_PURETE = snap.val() || {}; renderDrogueTabs(); });
