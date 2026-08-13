@@ -67,9 +67,7 @@ const PURETE_DROGUES_AUTORISEES = ["mexicana", "cock", "cannabis"];
 
 function renderDrogueTabs() {
   const catDrogue = getCatDrogue();
-  const produits = catDrogue
-    ? entries(catDrogue.produits).filter(([, p]) => PURETE_DROGUES_AUTORISEES.includes((p.nom || "").toLowerCase()))
-    : [];
+  const produits = catDrogue ? entries(catDrogue.produits) : [];
   const tabsBar = document.getElementById("drogueTabsBar");
   const zone = document.getElementById("drogueTabContent");
   if (!tabsBar || !zone) return;
@@ -86,29 +84,59 @@ function renderDrogueTabs() {
   ).join("");
 
   const pid = ACTIVE_DROGUE_TAB;
-  const nomDrogue = catDrogue.produits[pid].nom;
-  const purete = FOUR_PURETE[pid] || {};
+  const p = catDrogue.produits[pid];
+  const nomDrogue = p.nom;
+  const avecPurete = PURETE_DROGUES_AUTORISEES.includes((nomDrogue || "").toLowerCase());
 
-  zone.innerHTML = `
-    <div class="panel">
-      <div class="panel-head"><h2>🔥 ${nomDrogue} — par pureté</h2></div>
-      <table>
-        <thead><tr><th>Pureté</th><th>Stock (Four)</th><th>Quantité</th><th></th><th></th></tr></thead>
-        <tbody>
-          ${PURETES.map(pu => `
-            <tr>
-              <td><strong>${pu}%</strong></td>
-              <td class="mono">${Number(purete[pu]) || 0}</td>
-              <td><input type="number" id="qtePurete_${pu}" value="1" min="1" style="max-width:100px;"></td>
-              <td><span class="btn btn-sm btn-gold" onclick="mouvementPurete('${pid}','${pu}','ajout')">+ Ajouter</span></td>
-              <td><span class="btn btn-sm btn-danger" onclick="mouvementPurete('${pid}','${pu}','retrait')">− Retirer</span></td>
-            </tr>
-          `).join("")}
-        </tbody>
-      </table>
-      <p class="small muted mt8">Chaque ajout/retrait ici met aussi à jour le stock global de "${nomDrogue}" dans Stock Drogue.</p>
-    </div>
-  `;
+  if (avecPurete) {
+    const purete = FOUR_PURETE[pid] || {};
+    zone.innerHTML = `
+      <div class="panel">
+        <div class="panel-head"><h2>🔥 ${nomDrogue} — par pureté</h2></div>
+        <table>
+          <thead><tr><th>Pureté</th><th>Stock (Four)</th><th>Quantité</th><th></th><th></th></tr></thead>
+          <tbody>
+            ${PURETES.map(pu => `
+              <tr>
+                <td><strong>${pu}%</strong></td>
+                <td class="mono">${Number(purete[pu]) || 0}</td>
+                <td><input type="number" id="qtePurete_${pu}" value="1" min="1" style="max-width:100px;"></td>
+                <td><span class="btn btn-sm btn-gold" onclick="mouvementPurete('${pid}','${pu}','ajout')">+ Ajouter</span></td>
+                <td><span class="btn btn-sm btn-danger" onclick="mouvementPurete('${pid}','${pu}','retrait')">− Retirer</span></td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+        <p class="small muted mt8">Chaque ajout/retrait ici met aussi à jour le stock global de "${nomDrogue}" dans Stock Drogue.</p>
+      </div>
+    `;
+  } else {
+    zone.innerHTML = `
+      <div class="panel">
+        <div class="panel-head"><h2>🔥 ${nomDrogue}</h2></div>
+        <div class="row">
+          <div><label class="l">Stock actuel</label><input type="text" value="${Number(p.stock) || 0}" disabled></div>
+          <div><label class="l">Quantité</label><input type="number" id="qteSimple" value="1" min="1"></div>
+          <div style="display:flex;align-items:flex-end;gap:8px;">
+            <span class="btn btn-gold" onclick="mouvementSimple('${pid}','ajout')">+ Ajouter</span>
+            <span class="btn btn-danger" onclick="mouvementSimple('${pid}','retrait')">− Retirer</span>
+          </div>
+        </div>
+        <p class="small muted mt8">Pas de suivi par pureté pour ce produit — juste le stock global de "${nomDrogue}".</p>
+      </div>
+    `;
+  }
+}
+
+async function mouvementSimple(pid, sens) {
+  const qte = Number(document.getElementById("qteSimple").value) || 0;
+  if (qte <= 0) { toast("Quantité invalide.", true); return; }
+  const catDrogue = getCatDrogue();
+  const ref = db.ref(`stock/${catDrogue.id}/produits/${pid}/stock`);
+  const snap = await ref.once("value");
+  const current = Number(snap.val()) || 0;
+  await ref.set(sens === "ajout" ? current + qte : Math.max(0, current - qte));
+  toast("Stock mis à jour.");
 }
 
 async function mouvementPurete(pid, purete, sens) {
