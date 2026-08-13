@@ -63,9 +63,13 @@ function switchDrogueTab(pid) {
   renderDrogueTabs();
 }
 
+const PURETE_DROGUES_AUTORISEES = ["mexicana", "cock", "cannabis"];
+
 function renderDrogueTabs() {
   const catDrogue = getCatDrogue();
-  const produits = catDrogue ? entries(catDrogue.produits) : [];
+  const produits = catDrogue
+    ? entries(catDrogue.produits).filter(([, p]) => PURETE_DROGUES_AUTORISEES.includes((p.nom || "").toLowerCase()))
+    : [];
   const tabsBar = document.getElementById("drogueTabsBar");
   const zone = document.getElementById("drogueTabContent");
   if (!tabsBar || !zone) return;
