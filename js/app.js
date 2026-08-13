@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { page: "stock",        icon: "📦", label: "Stock",        file: "stock.html" },
   { page: "transactions", icon: "🔁", label: "Transactions", file: "transactions.html" },
   { page: "labo",         icon: "🧪", label: "Labo",         file: "labo.html" },
+  { page: "four",         icon: "🔥", label: "Four",         file: "four.html" },
   { page: "fourriere",    icon: "🚗", label: "Fourrière",    file: "fourriere.html" },
   { page: "stats",        icon: "📊", label: "Stats",        file: "stats.html" },
   { page: "quotas",       icon: "🎯", label: "Quotas",       file: "quotas.html" },

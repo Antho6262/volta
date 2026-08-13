@@ -39,6 +39,7 @@ const PAGES_DISPO = [
   { page: "stock",         label: "Stock" },
   { page: "quotas",        label: "Quotas" },
   { page: "labo",          label: "Labo" },
+  { page: "four",          label: "Four" },
   { page: "blanchiment",   label: "Blanchiment" },
   { page: "paye",          label: "Paye" },
   { page: "transactions",  label: "Transactions" },
