@@ -146,6 +146,7 @@ function renderContent() {
       <div class="panel-head">
         <h2>Stock Labo — commun</h2>
       </div>
+      <div class="tabs" id="stockLaboTabsBar"></div>
       <div id="zoneStock">Chargement…</div>
     </div>
 
@@ -249,24 +250,36 @@ async function ajouterProduction() {
   toggleRaison();
 }
 
+let ACTIVE_STOCK_TAB = null;
+function switchStockTab(pid) {
+  ACTIVE_STOCK_TAB = pid;
+  afficherStock();
+}
+
 async function afficherStock() {
+  const tabsBar = document.getElementById("stockLaboTabsBar");
   const zone = document.getElementById("zoneStock");
   const produitsIds = Object.entries(LABO_PRODUITS).filter(([, p]) => p.recipe && p.recipe.length).map(([pid]) => pid);
-  if (!produitsIds.length) { zone.innerHTML = '<p class="muted small">Aucun produit fini Labo configuré.</p>'; return; }
+  if (!produitsIds.length) { tabsBar.innerHTML = ""; zone.innerHTML = '<p class="muted small">Aucun produit fini Labo configuré.</p>'; return; }
 
+  if (!ACTIVE_STOCK_TAB || !produitsIds.includes(ACTIVE_STOCK_TAB)) ACTIVE_STOCK_TAB = produitsIds[0];
+
+  tabsBar.innerHTML = produitsIds.map(pid =>
+    `<div class="tab ${ACTIVE_STOCK_TAB === pid ? "active" : ""}" onclick="switchStockTab('${pid}')">${LABO_PRODUITS[pid].nom}</div>`
+  ).join("");
+
+  const pid = ACTIVE_STOCK_TAB;
+  const p = LABO_PRODUITS[pid];
   const stockAll = RAW.stockAll || {};
+  let stockAffiche = Number(p.stock) || 0;
+  if (p.venteCatId && p.venteProdId) {
+    const catVente = stockAll[p.venteCatId];
+    const prodVente = catVente && catVente.produits ? catVente.produits[p.venteProdId] : null;
+    // Lecture en direct du stock vendable lié : reste toujours identique, même après une vente.
+    stockAffiche = prodVente ? (Number(prodVente.stock) || 0) : stockAffiche;
+  }
   zone.innerHTML = `<table><thead><tr><th>Produit</th><th>Stock</th></tr></thead><tbody>
-    ${produitsIds.map(pid => {
-      const p = LABO_PRODUITS[pid];
-      let stockAffiche = Number(p.stock) || 0;
-      if (p.venteCatId && p.venteProdId) {
-        const catVente = stockAll[p.venteCatId];
-        const prodVente = catVente && catVente.produits ? catVente.produits[p.venteProdId] : null;
-        // Lecture en direct du stock vendable lié : reste toujours identique, même après une vente.
-        stockAffiche = prodVente ? (Number(prodVente.stock) || 0) : stockAffiche;
-      }
-      return `<tr><td>${p.nom}</td><td>${stockAffiche}</td></tr>`;
-    }).join("")}
+    <tr><td>${p.nom}</td><td>${stockAffiche}</td></tr>
   </tbody></table>`;
 }
 
