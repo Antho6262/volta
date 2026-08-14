@@ -142,13 +142,9 @@ function renderContent() {
       <p class="small muted mt8">Une production réussie retire automatiquement les ingrédients de la recette du stock commun, et ajoute la quantité produite au stock commun de la faction.</p>
     </div>
 
-    <div class="panel mt24">
-      <div class="panel-head">
-        <h2>Stock Labo — commun</h2>
-      </div>
-      <div class="tabs" id="stockLaboTabsBar"></div>
-      <div id="zoneStock">Chargement…</div>
-    </div>
+    <h2 class="mt24">Stock Labo — commun</h2>
+    <div class="tabs mt16" id="stockLaboTabsBar"></div>
+    <div id="zoneStock">Chargement…</div>
 
     <div class="panel">
       <div class="panel-head">
@@ -250,6 +246,13 @@ async function ajouterProduction() {
   toggleRaison();
 }
 
+function badgeNiveau(p) {
+  const stock = Number(p.stock) || 0, seuil = Number(p.seuil) || 0;
+  if (stock <= seuil) return '<span class="badge badge-fail">Rupture</span>';
+  if (stock <= seuil * 1.5) return '<span class="badge badge-warn">Faible</span>';
+  return '<span class="badge badge-ok">OK</span>';
+}
+
 let ACTIVE_STOCK_TAB = null;
 function switchStockTab(pid) {
   ACTIVE_STOCK_TAB = pid;
@@ -278,9 +281,12 @@ async function afficherStock() {
     // Lecture en direct du stock vendable lié : reste toujours identique, même après une vente.
     stockAffiche = prodVente ? (Number(prodVente.stock) || 0) : stockAffiche;
   }
-  zone.innerHTML = `<table><thead><tr><th>Produit</th><th>Stock</th></tr></thead><tbody>
-    <tr><td>${p.nom}</td><td>${stockAffiche}</td></tr>
-  </tbody></table>`;
+  const pAff = { ...p, stock: stockAffiche };
+  zone.innerHTML = `<div class="panel">
+    <table><thead><tr><th>Produit</th><th>Prix</th><th>Stock</th><th>Seuil</th><th>Niveau</th></tr></thead><tbody>
+      <tr><td>${p.nom}</td><td>${formatMoney(p.prix)}</td><td class="mono">${stockAffiche}</td><td class="mono">${p.seuil || 0}</td><td>${badgeNiveau(pAff)}</td></tr>
+    </tbody></table>
+  </div>`;
 }
 
 async function supprimerProduction(semaineId, id, membreId, pid, qte, resultat) {
