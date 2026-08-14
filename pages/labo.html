@@ -248,6 +248,19 @@ function badgeNiveau(p) {
 }
 
 let ACTIVE_LABO_TAB = null;
+
+function emojiProduit(nom) {
+  const n = (nom || "").toLowerCase();
+  if (n.includes("spor") || n.includes("champi") || n.includes("psilo")) return "🍄";
+  if (n.includes("héro") || n.includes("hero")) return "💉";
+  if (n.includes("meth")) return "🧪";
+  if (n.includes("cannabis") || n.includes("weed")) return "🌿";
+  if (n.includes("cocaïne") || n.includes("coke") || n.includes("cock")) return "❄️";
+  if (n.includes("ecstasy") || n.includes("mdma")) return "💊";
+  if (n.includes("lean")) return "🧃";
+  return "💊";
+}
+
 function switchLaboTab(pid) {
   ACTIVE_LABO_TAB = pid;
   renderLaboTabs();
@@ -266,7 +279,7 @@ function renderLaboTabs() {
   if (!ACTIVE_LABO_TAB || !produitsIds.includes(ACTIVE_LABO_TAB)) ACTIVE_LABO_TAB = produitsIds[0];
 
   tabsBar.innerHTML = produitsIds.map(pid =>
-    `<div class="tab ${ACTIVE_LABO_TAB === pid ? "active" : ""}" onclick="switchLaboTab('${pid}')">${LABO_PRODUITS[pid].nom}</div>`
+    `<div class="tab ${ACTIVE_LABO_TAB === pid ? "active" : ""}" onclick="switchLaboTab('${pid}')">${emojiProduit(LABO_PRODUITS[pid].nom)} ${LABO_PRODUITS[pid].nom}</div>`
   ).join("");
 
   document.getElementById("produitActifNom").textContent = LABO_PRODUITS[ACTIVE_LABO_TAB].nom;
