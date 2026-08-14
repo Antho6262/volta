@@ -51,17 +51,8 @@ function renderTout() {
   });
   if (prevFiltM) filtM.value = prevFiltM;
 
-  const selP = document.getElementById("fProduit");
-  const prevP = selP.value;
-  const prodEntries = Object.entries(LABO_PRODUITS);
-  const produitsFinaux = prodEntries.filter(([, p]) => p.recipe && p.recipe.length);
-  selP.innerHTML = produitsFinaux.length
-    ? produitsFinaux.map(([pid, p]) => `<option value="${pid}">${p.nom}</option>`).join("")
-    : '<option value="">Aucun produit avec recette — configure-en un dans le catalogue</option>';
-  if (prevP) selP.value = prevP;
-
   afficherZoneIngredients();
-  afficherStock();
+  renderLaboTabs();
   renderHistoriqueDepuisActions();
 }
 
@@ -120,6 +111,8 @@ function renderContent() {
     <div class="sigil-rule"></div>
     <p class="muted small" id="weekLabel">Semaine active : —</p>
 
+    <div class="tabs mt16" id="laboTabsBar"></div>
+
     <div class="panel mt16">
       <div class="panel-head"><h2>Stock d'ingrédients (commun)</h2></div>
       <p class="small muted">Stock commun à toute la faction — ajoute ce que tu as récolté (ex: champignons), ça met à jour le stock pour tout le monde. Pour créer un nouvel ingrédient ou une nouvelle drogue (recette), voir Admin → Stock → catégorie Labo.</p>
@@ -127,14 +120,13 @@ function renderContent() {
     </div>
 
     <div class="panel mt16">
-      <div class="panel-head"><h2>Nouvelle production</h2></div>
+      <div class="panel-head"><h2>Nouvelle production — <span id="produitActifNom">—</span></h2></div>
       <div class="row">
         <div id="wrapFMembre"><label class="l">Membre</label><select id="fMembre"></select></div>
-        <div><label class="l">Produit</label><select id="fProduit"></select></div>
         <div><label class="l">Quantité</label><input type="number" id="fQte" value="1" min="1"></div>
+        <div><label class="l">Résultat</label><select id="fResultat" onchange="toggleRaison()"><option>Réussite</option><option>Échec</option></select></div>
       </div>
       <div class="row mt8">
-        <div><label class="l">Résultat</label><select id="fResultat" onchange="toggleRaison()"><option>Réussite</option><option>Échec</option></select></div>
         <div id="raisonWrap" style="display:none;"><label class="l">Raison de l'échec</label><input type="text" id="fRaison" placeholder="Optionnel"></div>
         <div><label class="l">Date</label><input type="date" id="fDate"></div>
         <div style="display:flex;align-items:flex-end;"><button class="btn btn-primary" style="width:100%;" onclick="ajouterProduction()">Enregistrer</button></div>
@@ -143,7 +135,6 @@ function renderContent() {
     </div>
 
     <h2 class="mt24">Stock Labo — commun</h2>
-    <div class="tabs mt16" id="stockLaboTabsBar"></div>
     <div id="zoneStock">Chargement…</div>
 
     <div class="panel">
@@ -196,7 +187,7 @@ async function ajouterProduction() {
   if (!ACTIVE_WEEK) { toast("Aucune semaine active.", true); return; }
   if (ACTIVE_WEEK.bloquee) { toast("La semaine active est bloquée.", true); return; }
   const membreId = SESSION.role === "admin" ? document.getElementById("fMembre").value : SESSION.id;
-  const pid = document.getElementById("fProduit").value;
+  const pid = ACTIVE_LABO_TAB;
   const qte = Number(document.getElementById("fQte").value) || 0;
   const resultat = document.getElementById("fResultat").value;
   const raison = document.getElementById("fRaison").value;
@@ -253,26 +244,39 @@ function badgeNiveau(p) {
   return '<span class="badge badge-ok">OK</span>';
 }
 
-let ACTIVE_STOCK_TAB = null;
-function switchStockTab(pid) {
-  ACTIVE_STOCK_TAB = pid;
+let ACTIVE_LABO_TAB = null;
+function switchLaboTab(pid) {
+  ACTIVE_LABO_TAB = pid;
+  renderLaboTabs();
+}
+
+function renderLaboTabs() {
+  const tabsBar = document.getElementById("laboTabsBar");
+  const produitsIds = Object.entries(LABO_PRODUITS).filter(([, p]) => p.recipe && p.recipe.length).map(([pid]) => pid);
+
+  if (!produitsIds.length) {
+    tabsBar.innerHTML = "";
+    document.getElementById("produitActifNom").textContent = "—";
+    document.getElementById("zoneStock").innerHTML = '<p class="muted small">Aucun produit fini Labo configuré — vas dans Admin → Stock → catégorie Labo.</p>';
+    return;
+  }
+  if (!ACTIVE_LABO_TAB || !produitsIds.includes(ACTIVE_LABO_TAB)) ACTIVE_LABO_TAB = produitsIds[0];
+
+  tabsBar.innerHTML = produitsIds.map(pid =>
+    `<div class="tab ${ACTIVE_LABO_TAB === pid ? "active" : ""}" onclick="switchLaboTab('${pid}')">${LABO_PRODUITS[pid].nom}</div>`
+  ).join("");
+
+  document.getElementById("produitActifNom").textContent = LABO_PRODUITS[ACTIVE_LABO_TAB].nom;
   afficherStock();
 }
 
 async function afficherStock() {
-  const tabsBar = document.getElementById("stockLaboTabsBar");
   const zone = document.getElementById("zoneStock");
-  const produitsIds = Object.entries(LABO_PRODUITS).filter(([, p]) => p.recipe && p.recipe.length).map(([pid]) => pid);
-  if (!produitsIds.length) { tabsBar.innerHTML = ""; zone.innerHTML = '<p class="muted small">Aucun produit fini Labo configuré.</p>'; return; }
+  if (!ACTIVE_LABO_TAB) return;
 
-  if (!ACTIVE_STOCK_TAB || !produitsIds.includes(ACTIVE_STOCK_TAB)) ACTIVE_STOCK_TAB = produitsIds[0];
-
-  tabsBar.innerHTML = produitsIds.map(pid =>
-    `<div class="tab ${ACTIVE_STOCK_TAB === pid ? "active" : ""}" onclick="switchStockTab('${pid}')">${LABO_PRODUITS[pid].nom}</div>`
-  ).join("");
-
-  const pid = ACTIVE_STOCK_TAB;
+  const pid = ACTIVE_LABO_TAB;
   const p = LABO_PRODUITS[pid];
+  if (!p) return;
   const stockAll = RAW.stockAll || {};
   let stockAffiche = Number(p.stock) || 0;
   if (p.venteCatId && p.venteProdId) {
