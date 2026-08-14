@@ -51,7 +51,6 @@ function renderTout() {
   });
   if (prevFiltM) filtM.value = prevFiltM;
 
-  afficherZoneIngredients();
   renderLaboTabs();
   renderHistoriqueDepuisActions();
 }
@@ -173,14 +172,18 @@ async function ajouterIngredient(pid) {
 
 function afficherZoneIngredients() {
   const zone = document.getElementById("zoneIngredients");
-  const ingredients = Object.entries(LABO_PRODUITS).filter(([, p]) => !(p.recipe && p.recipe.length));
+  const prod = LABO_PRODUITS[ACTIVE_LABO_TAB];
+  const idsRecette = prod && prod.recipe ? new Set(prod.recipe.map(l => l.ingredientId)) : null;
+  const ingredients = Object.entries(LABO_PRODUITS).filter(([pid, p]) =>
+    !(p.recipe && p.recipe.length) && (!idsRecette || idsRecette.has(pid))
+  );
   zone.innerHTML = ingredients.length ? ingredients.map(([pid, p]) => `
     <div class="row mt8" style="align-items:center;">
       <div style="min-width:160px;">${p.nom} — <strong>${Number(LABO_STOCK_COMMUN[pid]) || 0}</strong> en stock</div>
       <input type="number" id="qteIng_${pid}" value="1" min="1" style="max-width:90px;">
       <button class="btn btn-gold" onclick="ajouterIngredient('${pid}')">Ajouter au stock commun</button>
     </div>
-  `).join("") : '<p class="muted small">Aucun ingrédient configuré — vas dans Admin → Stock → catégorie Labo pour en créer.</p>';
+  `).join("") : '<p class="muted small">Aucun ingrédient dans la recette de ce produit — vas dans Admin → Stock → catégorie Labo pour en créer.</p>';
 }
 
 async function ajouterProduction() {
@@ -267,6 +270,7 @@ function renderLaboTabs() {
   ).join("");
 
   document.getElementById("produitActifNom").textContent = LABO_PRODUITS[ACTIVE_LABO_TAB].nom;
+  afficherZoneIngredients();
   afficherStock();
 }
 
