@@ -139,7 +139,7 @@ function renderPaye() {
       <td class="mono">${formatMoney(totalGenere)}</td>
       <td id="montantCell_${m.id}">${formatMoney(montant)}</td>
       <td>${isAdmin && !dejaPaye ? `<select id="typeArgent_${m.id}" onchange="onArgentChange('${m.id}', ${montant})"><option value="sale" selected>Sale</option><option value="propre">Propre (-${TAUX_BLANCHIMENT}%)</option></select>` : "-"}</td>
-      <td>${dejaPaye ? '<span class="badge badge-ok">Payé</span>' : (isAdmin ? `<span class="btn btn-sm btn-gold" onclick="payer('${m.id}','${m.prenom}',${montant})">Payer</span>` : '<span class="badge badge-warn">En attente</span>')}</td>
+      <td>${dejaPaye ? '<span class="badge badge-ok">Payé</span>' : (isAdmin ? `<span class="btn btn-sm btn-gold" onclick="payer('${m.id}',${montant})">Payer</span>` : '<span class="badge badge-warn">En attente</span>')}</td>
     </tr>`;
   }).join("") : '<tr class="empty-row"><td colspan="7">Aucun membre</td></tr>';
 
@@ -152,8 +152,9 @@ function onArgentChange(membreId, montantBase) {
   document.getElementById("montantCell_" + membreId).textContent = formatMoney(montantAffiche);
 }
 
-async function payer(membreId, prenom, montantBase) {
+async function payer(membreId, montantBase) {
   if (montantBase < 0) { toast("Montant invalide.", true); return; }
+  const prenom = (RAW.membres[membreId] || {}).prenom || "ce membre";
   const typeArgent = document.getElementById("typeArgent_" + membreId).value;
   const montant = typeArgent === "propre" ? Math.round(montantBase * (1 - TAUX_BLANCHIMENT / 100)) : montantBase;
   if (!confirm(`Confirmer le paiement de ${formatMoney(montant)} (argent ${typeArgent}${typeArgent === "propre" ? `, -${TAUX_BLANCHIMENT}% de blanchiment déjà appliqué` : ""}) à ${prenom} ?`)) return;
