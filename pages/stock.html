@@ -15,8 +15,11 @@
 <script src="../js/firebase-config.js"></script>
 <script src="../js/app.js"></script>
 <script>
-let SESSION, STOCK = {}, LABO_COMMUN = {};
+let SESSION, STOCK = {}, LABO_COMMUN = {}, FOUR_PURETE = {};
 let ACTIVE_TAB = "argent";
+let ACTIVE_DROGUE_SUBTAB = null;
+const PURETES = ["50", "70", "90", "99"];
+const PURETE_DROGUES_AUTORISEES = ["mexicana", "cock", "cannabis"];
 
 function renderContent() {
   document.getElementById("content").innerHTML = `
@@ -92,7 +95,13 @@ function renderStock() {
   const cat = STOCK[catId];
   if (!cat) { zone.innerHTML = '<div class="panel"><p class="muted">Catégorie introuvable.</p></div>'; return; }
   const isLabo = cat.nom === "Labo";
+  const isDrogue = (cat.nom || "").toLowerCase() === "drogue";
   const produitsIds = entries(cat.produits);
+
+  if (isDrogue) {
+    renderDrogueSousOnglets(catId, cat, produitsIds);
+    return;
+  }
 
   zone.innerHTML = `
     <div class="panel mt16">
@@ -134,6 +143,98 @@ function renderStock() {
       </table>
     </div>
   `;
+}
+
+function switchDrogueSousOnglet(pid) {
+  ACTIVE_DROGUE_SUBTAB = pid;
+  renderStock();
+}
+
+function renderDrogueSousOnglets(catId, cat, produitsIds) {
+  const zone = document.getElementById("stockTabContent");
+  if (!produitsIds.length) {
+    zone.innerHTML = '<div class="panel"><p class="muted small">Aucune drogue dans cette catégorie — ajoute-en dans Admin → Stock.</p></div>';
+    return;
+  }
+  if (!ACTIVE_DROGUE_SUBTAB || !produitsIds.find(([pid]) => pid === ACTIVE_DROGUE_SUBTAB)) ACTIVE_DROGUE_SUBTAB = produitsIds[0][0];
+
+  const sousTabsBar = produitsIds.map(([pid, p]) =>
+    `<div class="tab ${ACTIVE_DROGUE_SUBTAB === pid ? "active" : ""}" onclick="switchDrogueSousOnglet('${pid}')">${p.nom}</div>`
+  ).join("");
+
+  const pid = ACTIVE_DROGUE_SUBTAB;
+  const p = cat.produits[pid];
+  const nomDrogue = p.nom;
+  const avecPurete = PURETE_DROGUES_AUTORISEES.includes((nomDrogue || "").toLowerCase());
+
+  let contenu;
+  if (avecPurete) {
+    const purete = FOUR_PURETE[pid] || {};
+    contenu = `
+      <div class="panel">
+        <div class="panel-head"><h2>${cat.emoji || "💊"} ${nomDrogue} — par pureté</h2></div>
+        <table>
+          <thead><tr><th>Pureté</th><th>Stock</th><th>Quantité</th><th></th><th></th></tr></thead>
+          <tbody>
+            ${PURETES.map(pu => `
+              <tr>
+                <td><strong>${pu}%</strong></td>
+                <td class="mono">${Number(purete[pu]) || 0}</td>
+                <td><input type="number" id="qtePurete_${pu}" value="1" min="1" style="max-width:100px;"></td>
+                <td><span class="btn btn-sm btn-gold" onclick="mouvementPurete('${catId}','${pid}','${pu}','ajout')">+ Ajouter</span></td>
+                <td><span class="btn btn-sm btn-danger" onclick="mouvementPurete('${catId}','${pid}','${pu}','retrait')">− Retirer</span></td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+        <p class="small muted mt8">Chaque ajout/retrait ici met aussi à jour le stock global de "${nomDrogue}" (identique à la page Four).</p>
+      </div>
+    `;
+  } else {
+    contenu = `
+      <div class="panel">
+        <div class="panel-head"><h2>${cat.emoji || "💊"} ${nomDrogue}</h2></div>
+        <div class="row">
+          <div><label class="l">Stock actuel</label><input type="text" value="${Number(p.stock) || 0}" disabled></div>
+          <div><label class="l">Quantité</label><input type="number" id="qteSimpleDrogue" value="1" min="1"></div>
+          <div style="display:flex;align-items:flex-end;gap:8px;">
+            <span class="btn btn-gold" onclick="mouvementSimpleDrogue('${catId}','${pid}','ajout')">+ Ajouter</span>
+            <span class="btn btn-danger" onclick="mouvementSimpleDrogue('${catId}','${pid}','retrait')">− Retirer</span>
+          </div>
+        </div>
+        <p class="small muted mt8">Pas de suivi par pureté pour ce produit — juste le stock global.</p>
+      </div>
+    `;
+  }
+
+  zone.innerHTML = `<div class="tabs mt16">${sousTabsBar}</div>${contenu}`;
+}
+
+async function mouvementPurete(catId, pid, purete, sens) {
+  const qte = Number(document.getElementById(`qtePurete_${purete}`).value) || 0;
+  if (qte <= 0) { toast("Quantité invalide.", true); return; }
+
+  const refPurete = db.ref(`four_purete/${pid}/${purete}`);
+  const snapPurete = await refPurete.once("value");
+  const currentPurete = Number(snapPurete.val()) || 0;
+  await refPurete.set(sens === "ajout" ? currentPurete + qte : Math.max(0, currentPurete - qte));
+
+  const refGlobal = db.ref(`stock/${catId}/produits/${pid}/stock`);
+  const snapGlobal = await refGlobal.once("value");
+  const currentGlobal = Number(snapGlobal.val()) || 0;
+  await refGlobal.set(sens === "ajout" ? currentGlobal + qte : Math.max(0, currentGlobal - qte));
+
+  toast("Stock mis à jour.");
+}
+
+async function mouvementSimpleDrogue(catId, pid, sens) {
+  const qte = Number(document.getElementById("qteSimpleDrogue").value) || 0;
+  if (qte <= 0) { toast("Quantité invalide.", true); return; }
+  const ref = db.ref(`stock/${catId}/produits/${pid}/stock`);
+  const snap = await ref.once("value");
+  const current = Number(snap.val()) || 0;
+  await ref.set(sens === "ajout" ? current + qte : Math.max(0, current - qte));
+  toast("Stock mis à jour.");
 }
 
 async function chargerArgent() {
@@ -213,6 +314,7 @@ async function mouvement(catId) {
   renderContent();
   db.ref("stock").on("value", snap => { STOCK = snap.val() || {}; renderStock(); });
   db.ref("labo_stock_commun").on("value", snap => { LABO_COMMUN = snap.val() || {}; renderStock(); });
+  db.ref("four_purete").on("value", snap => { FOUR_PURETE = snap.val() || {}; renderStock(); });
 })();
 </script>
 </body>
