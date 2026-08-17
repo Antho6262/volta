@@ -16,6 +16,15 @@
 <script src="../js/app.js"></script>
 <script>
 let SESSION, ACTIVE_WEEK = null, VIEW_WEEK = null, ALL_SEMAINES = [], MEMBRES = {}, ACTIONS_DISPO = {}, STOCK = {}, GRADES_MASQUES = new Set(), EVENT_ACTIF = null;
+let ACTIVE_TRACKER_TAB = "drogue";
+
+function switchTrackerTab(tab) {
+  ACTIVE_TRACKER_TAB = tab;
+  document.getElementById("tabVenteDrogue").classList.toggle("active", tab === "drogue");
+  document.getElementById("tabAction").classList.toggle("active", tab === "action");
+  remplirSelectAction();
+  renderTable();
+}
 
 function majSemaines(snap) {
   ALL_SEMAINES = entries(snap.val()).map(([id, s]) => ({ id, ...s })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
@@ -49,6 +58,11 @@ function renderContent() {
     <h1>Tracker</h1>
     <div class="sigil-rule"></div>
     <p class="muted small" id="weekLabel">Semaine active : —</p>
+
+    <div class="tabs mt16" id="trackerTabsBar">
+      <div class="tab active" id="tabVenteDrogue" onclick="switchTrackerTab('drogue')">💊 Vente de Drogue</div>
+      <div class="tab" id="tabAction" onclick="switchTrackerTab('action')">🎯 Action</div>
+    </div>
 
     <div class="panel mt16">
       <div class="panel-head"><h2>Nouvelle action</h2></div>
@@ -185,8 +199,16 @@ async function chargerListes() {
     filtM.appendChild(new Option(label, id));
   });
 
+  remplirSelectAction();
+}
+
+function remplirSelectAction() {
   const selA = document.getElementById("fAction"), filtA = document.getElementById("filtAction");
-  const actEntries = entries(ACTIONS_DISPO).filter(([, a]) => a.nom !== "Labo");
+  const actEntries = entries(ACTIONS_DISPO).filter(([, a]) =>
+    a.nom !== "Labo" && (ACTIVE_TRACKER_TAB === "drogue" ? !!a.cat_variable : !a.cat_variable)
+  );
+  selA.innerHTML = "";
+  filtA.innerHTML = '<option value="">Toutes les actions</option>';
   if (!actEntries.length) {
     selA.innerHTML = '<option value="">Aucune action — à créer dans Admin</option>';
   } else {
@@ -299,7 +321,8 @@ function renderTable() {
   const fr = document.getElementById("filtResultat").value;
   const limite = Number(document.getElementById("filtLimite").value) || 10;
   const rows = ALL_ACTIONS.filter(a =>
-    (!fm || a.membre_id === fm) && (!fa || a.action_id === fa) && (!fr || a.resultat === fr)
+    (!fm || a.membre_id === fm) && (!fa || a.action_id === fa) && (!fr || a.resultat === fr) &&
+    (ACTIVE_TRACKER_TAB === "drogue" ? !!a.produit_drogue_id : !a.produit_drogue_id)
   ).slice(0, limite);
 
   const canDelete = SESSION.role === "admin";
