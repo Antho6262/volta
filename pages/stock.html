@@ -234,10 +234,20 @@ async function mouvementPurete(catId, pid, purete, sens) {
   const currentPurete = Number(snapPurete.val()) || 0;
   await refPurete.set(sens === "ajout" ? currentPurete + qte : Math.max(0, currentPurete - qte));
 
-  const refGlobal = db.ref(`stock/${catId}/produits/${pid}/stock`);
-  const snapGlobal = await refGlobal.once("value");
-  const currentGlobal = Number(snapGlobal.val()) || 0;
-  await refGlobal.set(sens === "ajout" ? currentGlobal + qte : Math.max(0, currentGlobal - qte));
+  if (purete !== "brut" && sens === "ajout") {
+    // Purifier consomme du stock non purifié (conversion, pas de création) : on retire l'équivalent du brut,
+    // sans toucher au stock global qui a déjà été compté quand le brut a été ajouté.
+    const refBrut = db.ref(`four_purete/${pid}/brut`);
+    const snapBrut = await refBrut.once("value");
+    const currentBrut = Number(snapBrut.val()) || 0;
+    await refBrut.set(Math.max(0, currentBrut - qte));
+  } else {
+    // Ajout de brut (nouvelle matière) ou retrait (consommation/perte) : le stock global bouge.
+    const refGlobal = db.ref(`stock/${catId}/produits/${pid}/stock`);
+    const snapGlobal = await refGlobal.once("value");
+    const currentGlobal = Number(snapGlobal.val()) || 0;
+    await refGlobal.set(sens === "ajout" ? currentGlobal + qte : Math.max(0, currentGlobal - qte));
+  }
 
   toast("Stock mis à jour.");
 }
