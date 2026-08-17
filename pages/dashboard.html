@@ -42,6 +42,20 @@ function renderContent() {
 let ACTIVE_DASH_TAB = null;
 let ACTIVE_DASH_DROGUE_SUBTAB = null;
 const PURETES = ["brut", "50", "70", "90", "99"];
+
+function emojiProduit(nom) {
+  const n = (nom || "").toLowerCase();
+  if (n.includes("spor") || n.includes("champi") || n.includes("psilo")) return "🍄";
+  if (n.includes("héro") || n.includes("hero")) return "💉";
+  if (n.includes("meth")) return "🧪";
+  if (n.includes("cannabis") || n.includes("weed")) return "🌿";
+  if (n.includes("cocaïne") || n.includes("coke") || n.includes("cock")) return "❄️";
+  if (n.includes("ecstasy") || n.includes("mdma")) return "💊";
+  if (n.includes("lean")) return "🧃";
+  if (n.includes("mexicana")) return "🌶️";
+  return "💊";
+}
+
 const LABEL_PURETE = { brut: "Non purifié" };
 const PURETE_DROGUES_AUTORISEES = ["mexicana", "cock", "cannabis"];
 
@@ -106,7 +120,7 @@ function renderDrogueSousOnglets(catId, cat) {
   if (!ACTIVE_DASH_DROGUE_SUBTAB || !produitsIds.find(([pid]) => pid === ACTIVE_DASH_DROGUE_SUBTAB)) ACTIVE_DASH_DROGUE_SUBTAB = produitsIds[0][0];
 
   const sousTabsBar = produitsIds.map(([pid, p]) =>
-    `<div class="tab ${ACTIVE_DASH_DROGUE_SUBTAB === pid ? "active" : ""}" onclick="switchDashDrogueSousOnglet('${pid}')">${p.nom}</div>`
+    `<div class="tab ${ACTIVE_DASH_DROGUE_SUBTAB === pid ? "active" : ""}" onclick="switchDashDrogueSousOnglet('${pid}')">${emojiProduit(p.nom)} ${p.nom}</div>`
   ).join("");
 
   const pid = ACTIVE_DASH_DROGUE_SUBTAB;

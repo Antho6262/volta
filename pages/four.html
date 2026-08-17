@@ -17,6 +17,19 @@
 <script>
 let SESSION, STOCK = {}, MEMBRES = {}, FOUR_PURETE = {};
 const PURETES = ["50", "70", "90", "99"];
+
+function emojiProduit(nom) {
+  const n = (nom || "").toLowerCase();
+  if (n.includes("spor") || n.includes("champi") || n.includes("psilo")) return "🍄";
+  if (n.includes("héro") || n.includes("hero")) return "💉";
+  if (n.includes("meth")) return "🧪";
+  if (n.includes("cannabis") || n.includes("weed")) return "🌿";
+  if (n.includes("cocaïne") || n.includes("coke") || n.includes("cock")) return "❄️";
+  if (n.includes("ecstasy") || n.includes("mdma")) return "💊";
+  if (n.includes("lean")) return "🧃";
+  if (n.includes("mexicana")) return "🌶️";
+  return "💊";
+}
 let ACTIVE_DROGUE_TAB = null;
 
 // Trouve la catégorie "Drogue" quel que soit son id réel.
@@ -80,7 +93,7 @@ function renderDrogueTabs() {
   if (!ACTIVE_DROGUE_TAB || !produits.find(([pid]) => pid === ACTIVE_DROGUE_TAB)) ACTIVE_DROGUE_TAB = produits[0][0];
 
   tabsBar.innerHTML = produits.map(([pid, p]) =>
-    `<div class="tab ${ACTIVE_DROGUE_TAB === pid ? "active" : ""}" onclick="switchDrogueTab('${pid}')">${p.nom}</div>`
+    `<div class="tab ${ACTIVE_DROGUE_TAB === pid ? "active" : ""}" onclick="switchDrogueTab('${pid}')">${emojiProduit(p.nom)} ${p.nom}</div>`
   ).join("");
 
   const pid = ACTIVE_DROGUE_TAB;

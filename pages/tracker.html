@@ -16,7 +16,7 @@
 <script src="../js/app.js"></script>
 <script>
 let SESSION, ACTIVE_WEEK = null, VIEW_WEEK = null, ALL_SEMAINES = [], MEMBRES = {}, ACTIONS_DISPO = {}, STOCK = {}, GRADES_MASQUES = new Set(), EVENT_ACTIF = null;
-let ACTIVE_TRACKER_TAB = "drogue";
+let ACTIVE_TRACKER_TAB = "action";
 
 function switchTrackerTab(tab) {
   ACTIVE_TRACKER_TAB = tab;
@@ -60,8 +60,8 @@ function renderContent() {
     <p class="muted small" id="weekLabel">Semaine active : —</p>
 
     <div class="tabs mt16" id="trackerTabsBar">
-      <div class="tab active" id="tabVenteDrogue" onclick="switchTrackerTab('drogue')">💊 Vente de Drogue</div>
-      <div class="tab" id="tabAction" onclick="switchTrackerTab('action')">🎯 Action</div>
+      <div class="tab active" id="tabAction" onclick="switchTrackerTab('action')">🎯 Action</div>
+      <div class="tab" id="tabVenteDrogue" onclick="switchTrackerTab('drogue')">💊 Vente de Drogue</div>
     </div>
 
     <div class="panel mt16">
