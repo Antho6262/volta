@@ -18,7 +18,8 @@
 let SESSION, STOCK = {}, LABO_COMMUN = {}, FOUR_PURETE = {};
 let ACTIVE_TAB = "argent";
 let ACTIVE_DROGUE_SUBTAB = null;
-const PURETES = ["50", "70", "90", "99"];
+const PURETES = ["brut", "50", "70", "90", "99"];
+const LABEL_PURETE = { brut: "Non purifié" };
 const PURETE_DROGUES_AUTORISEES = ["mexicana", "cock", "cannabis"];
 
 function renderContent() {
@@ -178,7 +179,7 @@ function renderDrogueSousOnglets(catId, cat, produitsIds) {
           <tbody>
             ${PURETES.map(pu => `
               <tr>
-                <td><strong>${pu}%</strong></td>
+                <td><strong>${LABEL_PURETE[pu] || pu + "%"}</strong></td>
                 <td class="mono">${Number(purete[pu]) || 0}</td>
                 <td><input type="number" id="qtePurete_${pu}" value="1" min="1" style="max-width:100px;"></td>
                 <td><span class="btn btn-sm btn-gold" onclick="mouvementPurete('${catId}','${pid}','${pu}','ajout')">+ Ajouter</span></td>
