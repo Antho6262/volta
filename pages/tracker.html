@@ -17,6 +17,7 @@
 <script>
 let SESSION, ACTIVE_WEEK = null, VIEW_WEEK = null, ALL_SEMAINES = [], MEMBRES = {}, ACTIONS_DISPO = {}, STOCK = {}, GRADES_MASQUES = new Set(), EVENT_ACTIF = null;
 let ACTIVE_TRACKER_TAB = "action";
+const PURETE_DROGUES_AUTORISEES = ["mexicana", "cock", "cannabis"];
 
 function switchTrackerTab(tab) {
   ACTIVE_TRACKER_TAB = tab;
@@ -72,7 +73,14 @@ function renderContent() {
         <div><label class="l">Quantité</label><input type="number" id="fQte" value="1" min="1" onchange="autoFillMontants()"></div>
       </div>
       <div class="row mt8" id="produitVarWrap" style="display:none;">
-        <div><label class="l">Produit</label><select id="fProduitVar"></select></div>
+        <div><label class="l">Produit</label><select id="fProduitVar" onchange="onProduitVarChange()"></select></div>
+        <div id="puretewrap" style="display:none;"><label class="l">Pureté</label><select id="fPurete">
+          <option value="brut">Non purifié</option>
+          <option value="50">50%</option>
+          <option value="70">70%</option>
+          <option value="90">90%</option>
+          <option value="99">99%</option>
+        </select></div>
       </div>
       <div class="row mt8" id="equipeWrap" style="display:none;">
         <div style="width:100%;">
@@ -118,6 +126,15 @@ function toggleRaison() {
   document.getElementById("raisonWrap").style.display = document.getElementById("fResultat").value === "Échec" ? "block" : "none";
 }
 
+function onProduitVarChange() {
+  const actId = document.getElementById("fAction").value;
+  const act = ACTIONS_DISPO[actId];
+  const pid = document.getElementById("fProduitVar").value;
+  const puretewrap = document.getElementById("puretewrap");
+  const nomProduit = (act && act.cat_variable && STOCK[act.cat_variable] && pid) ? (STOCK[act.cat_variable].produits[pid] || {}).nom : "";
+  puretewrap.style.display = PURETE_DROGUES_AUTORISEES.includes((nomProduit || "").toLowerCase()) ? "block" : "none";
+}
+
 function onActionChange() {
   const actId = document.getElementById("fAction").value;
   const act = ACTIONS_DISPO[actId];
@@ -131,6 +148,7 @@ function onActionChange() {
     wrap.style.display = "none";
     sel.innerHTML = "";
   }
+  onProduitVarChange();
   document.getElementById("equipeWrap").style.display = (act && (act.nom === "Fleeca" || act.nom === "Armurerie")) ? "block" : "none";
   renderEquipeCheckboxes();
 
@@ -273,6 +291,9 @@ async function ajouterAction() {
     const prod = STOCK[act.cat_variable].produits[pid];
     entry.produit_drogue = prod.nom;
     entry.produit_drogue_id = pid;
+    if (PURETE_DROGUES_AUTORISEES.includes((prod.nom || "").toLowerCase())) {
+      entry.purete = document.getElementById("fPurete").value;
+    }
   }
   await db.ref("actions/" + ACTIVE_WEEK.id + "/" + uid()).set(entry);
 
@@ -285,6 +306,13 @@ async function ajouterAction() {
       const next = act.production ? current + qte : Math.max(0, current - qte);
       await ref.set(next);
       await db.ref("journal_stock/" + uid()).set({ date: entry.date, membre: m.prenom, action: act.nom, quantite: qte, produit: entry.produit_drogue, createdAt: Date.now() });
+
+      if (entry.purete) {
+        const refPurete = db.ref(`four_purete/${pid}/${entry.purete}`);
+        const snapPurete = await refPurete.once("value");
+        const currentPurete = Number(snapPurete.val()) || 0;
+        await refPurete.set(act.production ? currentPurete + qte : Math.max(0, currentPurete - qte));
+      }
     }
     await deduireStock(act, qte);
     if (sale > 0) await db.ref("argent/sale/" + uid()).set({ date: entry.date, description: "Action : " + act.nom, type: "Entrée", montant: sale, responsable: m.prenom, createdAt: Date.now() });
