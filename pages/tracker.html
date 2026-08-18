@@ -23,8 +23,8 @@ function switchTrackerTab(tab) {
   ACTIVE_TRACKER_TAB = tab;
   document.getElementById("tabVenteDrogue").classList.toggle("active", tab === "drogue");
   document.getElementById("tabAction").classList.toggle("active", tab === "action");
+  document.getElementById("actionFieldWrap").style.display = tab === "drogue" ? "none" : "block";
   remplirSelectAction();
-  renderTable();
 }
 
 function majSemaines(snap) {
@@ -69,7 +69,7 @@ function renderContent() {
       <div class="panel-head"><h2>Nouvelle action</h2></div>
       <div class="row">
         <div><label class="l">Membre</label><select id="fMembre" onchange="renderEquipeCheckboxes()"></select></div>
-        <div><label class="l">Action</label><select id="fAction" onchange="onActionChange()"></select></div>
+        <div id="actionFieldWrap"><label class="l">Action</label><select id="fAction" onchange="onActionChange()"></select></div>
         <div><label class="l">Quantité</label><input type="number" id="fQte" value="1" min="1" onchange="autoFillMontants()"></div>
       </div>
       <div class="row mt8" id="produitVarWrap" style="display:none;">
@@ -234,8 +234,13 @@ function remplirSelectAction() {
       selA.appendChild(new Option(a.nom, id));
       filtA.appendChild(new Option(a.nom, id));
     });
+    if (ACTIVE_TRACKER_TAB === "drogue") {
+      const venteDrogue = actEntries.find(([, a]) => a.nom === "Vente de Drogue");
+      if (venteDrogue) selA.value = venteDrogue[0];
+    }
   }
   onActionChange();
+  renderTable();
 }
 
 async function deduireStock(actionDef, quantite) {
