@@ -17,7 +17,7 @@
 <script>
 let SESSION;
 let ACTIVE_WEEK_ID = null, ACTIONS_REF = null;
-let DATA = { semaines: {}, argentSale: {}, argentPropre: {}, stock: {}, membres: {}, actions: {}, fourPurete: {} };
+let DATA = { semaines: {}, argentSale: {}, argentPropre: {}, stock: {}, membres: {}, actions: {} };
 let lastActionCount = null;
 
 function renderContent() {
@@ -41,7 +41,6 @@ function renderContent() {
 
 let ACTIVE_DASH_TAB = null;
 let ACTIVE_DASH_DROGUE_SUBTAB = null;
-const PURETES = ["brut", "50", "70", "90", "99"];
 
 function emojiProduit(nom) {
   const n = (nom || "").toLowerCase();
@@ -56,16 +55,12 @@ function emojiProduit(nom) {
   return "💊";
 }
 
-const LABEL_PURETE = { brut: "Non purifié" };
-const PURETE_DROGUES_AUTORISEES = ["mexicana", "cock", "cannabis"];
-
 function switchDashTab(catId) {
   ACTIVE_DASH_TAB = catId;
   renderStockTabs();
 }
 
 function renderStockTabs() {
-  // On masque les catégories vides (ex: "Four" n'a plus de catalogue propre depuis le système par pureté).
   const catList = entries(DATA.stock).filter(([, cat]) => entries(cat.produits).length > 0);
   if (!catList.length) { document.getElementById("dashTabsBar").innerHTML = ""; document.getElementById("dashTabContent").innerHTML = ""; return; }
   if (!ACTIVE_DASH_TAB || !catList.find(([id]) => id === ACTIVE_DASH_TAB)) ACTIVE_DASH_TAB = catList[0][0];
@@ -126,24 +121,8 @@ function renderDrogueSousOnglets(catId, cat) {
   const pid = ACTIVE_DASH_DROGUE_SUBTAB;
   const p = cat.produits[pid];
   const nomDrogue = p.nom;
-  const avecPurete = PURETE_DROGUES_AUTORISEES.includes((nomDrogue || "").toLowerCase());
 
-  let contenu;
-  if (avecPurete) {
-    const purete = DATA.fourPurete[pid] || {};
-    contenu = `
-      <div class="panel">
-        <div class="panel-head"><h2>${cat.emoji || "💊"} ${nomDrogue} — par pureté</h2></div>
-        <table>
-          <thead><tr><th>Pureté</th><th>Stock</th></tr></thead>
-          <tbody>
-            ${PURETES.map(pu => `<tr><td><strong>${LABEL_PURETE[pu] || pu + "%"}</strong></td><td class="mono">${Number(purete[pu]) || 0}</td></tr>`).join("")}
-          </tbody>
-        </table>
-      </div>
-    `;
-  } else {
-    contenu = `
+  const contenu = `
       <div class="panel">
         <div class="panel-head"><h2>${cat.emoji || "💊"} ${nomDrogue}</h2></div>
         <table><thead><tr><th>Produit</th><th>Stock</th></tr></thead>
@@ -151,7 +130,6 @@ function renderDrogueSousOnglets(catId, cat) {
         </table>
       </div>
     `;
-  }
 
   zone.innerHTML = `<div class="tabs mt16">${sousTabsBar}</div>${contenu}`;
 }
@@ -221,7 +199,6 @@ function renderDerived() {
   db.ref("argent/sale").on("value", snap => { DATA.argentSale = snap.val() || {}; renderDerived(); });
   db.ref("argent/propre").on("value", snap => { DATA.argentPropre = snap.val() || {}; renderDerived(); });
   db.ref("stock").on("value", snap => { DATA.stock = snap.val() || {}; renderDerived(); });
-  db.ref("four_purete").on("value", snap => { DATA.fourPurete = snap.val() || {}; renderDerived(); });
   db.ref("membres").on("value", snap => { DATA.membres = snap.val() || {}; renderDerived(); });
 
   db.ref("events_drogue").on("value", snap => {
