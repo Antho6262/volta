@@ -17,7 +17,7 @@
 <script>
 let SESSION;
 let ACTIVE_WEEK_ID = null, ACTIONS_REF = null;
-let DATA = { semaines: {}, argentSale: {}, argentPropre: {}, stock: {}, membres: {}, actions: {}, objCfg: {} };
+let DATA = { semaines: {}, argentSale: {}, argentPropre: {}, stock: {}, membres: {}, actions: {} };
 let lastActionCount = null;
 
 function renderContent() {
@@ -36,12 +36,6 @@ function renderContent() {
 
     <div class="tabs mt24" id="dashTabsBar"></div>
     <div id="dashTabContent"></div>
-
-    <div class="panel mt24">
-      <div class="panel-head"><h2>🏛️ Objectif collectif — semaine active</h2></div>
-      <div id="dashObjRoute"></div>
-      <p class="small muted mt8" id="dashObjLabel" style="text-align:right;"></p>
-    </div>
   `;
 }
 
@@ -144,17 +138,6 @@ function calcSolde(val) {
   return entries(val).reduce((acc, [, l]) => acc + (l.type === "Sortie" ? -Number(l.montant || 0) : Number(l.montant || 0)), 0);
 }
 
-function routeVersVilla(pct) {
-  const p = Math.max(0, Math.min(100, pct));
-  const carLeft = 6 + p * 0.86;
-  return `<div class="obj-route">
-      <span class="obj-route-pct">${Math.round(p)}%</span>
-      <div class="obj-route-fill" style="width:${p}%;"></div>
-      <span class="obj-route-flag${p >= 100 ? " reached" : ""}">🏛️</span>
-      <span class="obj-route-car" style="left:${carLeft}%;">🚘</span>
-    </div>`;
-}
-
 function recompute() {
   // semaine active = la plus récente non bloquée, sinon la plus récente
   const list = entries(DATA.semaines).map(([id, s]) => ({ id, ...s })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
@@ -202,13 +185,6 @@ function renderDerived() {
 
   // stock — tous les onglets par catégorie
   renderStockTabs();
-
-  // objectif collectif — même cible que la page Objectifs
-  const cibleCollective = Number(Object.values(DATA.objCfg)[0]?.cible) || 0;
-  const gainsTotal = actions.reduce((acc, a) => acc + Number(a.gains_totaux || 0), 0);
-  const pctCollectif = cibleCollective > 0 ? Math.round(gainsTotal / cibleCollective * 100) : 0;
-  document.getElementById("dashObjRoute").innerHTML = routeVersVilla(pctCollectif);
-  document.getElementById("dashObjLabel").textContent = cibleCollective > 0 ? `${formatMoney(gainsTotal)} / ${formatMoney(cibleCollective)}` : "Aucune cible définie (page Objectifs)";
 }
 
 (async function () {
@@ -224,7 +200,6 @@ function renderDerived() {
   db.ref("argent/propre").on("value", snap => { DATA.argentPropre = snap.val() || {}; renderDerived(); });
   db.ref("stock").on("value", snap => { DATA.stock = snap.val() || {}; renderDerived(); });
   db.ref("membres").on("value", snap => { DATA.membres = snap.val() || {}; renderDerived(); });
-  db.ref("objectifs_config").on("value", snap => { DATA.objCfg = snap.val() || {}; renderDerived(); });
 
   db.ref("events_drogue").on("value", snap => {
     const now = Date.now();
