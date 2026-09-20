@@ -314,3 +314,31 @@ input:focus, select:focus, textarea:focus{border-color:var(--gold); box-shadow:0
 }
 
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.7} }
+
+/* ---------- ROUTE D'OBJECTIF — convoi qui avance vers la villa selon la progression ---------- */
+.obj-route{
+  position:relative; height:64px; margin:6px 0 4px;
+  background:
+    repeating-linear-gradient(90deg, var(--text-dim) 0 16px, transparent 16px 30px) center / 100% 2px no-repeat,
+    linear-gradient(180deg, #201517, #150e10);
+  border:1px solid var(--line); border-radius:var(--radius);
+  overflow:hidden;
+}
+.obj-route-fill{
+  position:absolute; top:0; left:0; bottom:0;
+  background:linear-gradient(90deg, rgba(124,26,38,.35), rgba(124,26,38,.12));
+  transition:width .6s ease-out;
+}
+.obj-route-car{
+  position:absolute; top:50%; transform:translate(-50%,-50%);
+  font-size:22px; transition:left .6s ease-out; filter:drop-shadow(0 2px 4px rgba(0,0,0,.6));
+}
+.obj-route-flag{
+  position:absolute; right:10px; top:50%; transform:translateY(-50%);
+  font-size:24px; opacity:.9; filter:drop-shadow(0 0 8px rgba(201,162,74,.4));
+}
+.obj-route-flag.reached{animation:pulse 1.4s ease-in-out infinite;}
+.obj-route-pct{
+  position:absolute; left:10px; top:6px; font-family:var(--font-mono); font-size:11px;
+  color:var(--gold); background:rgba(10,7,8,.55); padding:2px 6px; border-radius:3px;
+}

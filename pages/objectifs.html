@@ -22,6 +22,17 @@ function barre(pct, color) {
     <div style="height:100%; width:${Math.min(100, pct)}%; background:${color};"></div></div>`;
 }
 
+function routeVersVilla(pct) {
+  const p = Math.max(0, Math.min(100, pct));
+  const carLeft = 6 + p * 0.86; // laisse la place à l'icône voiture et au drapeau
+  return `<div class="obj-route">
+      <span class="obj-route-pct">${Math.round(p)}%</span>
+      <div class="obj-route-fill" style="width:${p}%;"></div>
+      <span class="obj-route-flag${p >= 100 ? " reached" : ""}">🏛️</span>
+      <span class="obj-route-car" style="left:${carLeft}%;">🚘</span>
+    </div>`;
+}
+
 function renderContent() {
   document.getElementById("content").innerHTML = `
     <h1>Objectifs</h1>
@@ -31,8 +42,8 @@ function renderContent() {
       <div class="panel-head"><h2>Objectif collectif (gains $ — semaine active)</h2></div>
       <div class="row" style="align-items:center;">
         ${SESSION.role === 'admin' ? '<input type="number" id="cibleCollective" style="max-width:160px" placeholder="Cible $">' : ''}
-        <div id="barreCollective" style="display:flex; align-items:center; gap:10px; flex:1;"></div>
       </div>
+      <div id="barreCollective" class="mt16"></div>
       ${SESSION.role === 'admin' ? '<button class="btn btn-primary mt16" onclick="majCibleCollective()">Enregistrer la cible</button>' : ''}
     </div>
 
@@ -82,8 +93,8 @@ function renderDerived() {
 
   const gainsTotal = actions.reduce((acc, a) => acc + Number(a.gains_totaux || 0), 0);
   const pctCollectif = cibleCollective > 0 ? Math.round(gainsTotal / cibleCollective * 100) : 0;
-  document.getElementById("barreCollective").innerHTML = barre(pctCollectif, pctCollectif >= 100 ? 'var(--success)' : 'var(--gold)') +
-    `<span class="small muted" style="white-space:nowrap;">${formatMoney(gainsTotal)} / ${formatMoney(cibleCollective)}</span>`;
+  document.getElementById("barreCollective").innerHTML = routeVersVilla(pctCollectif) +
+    `<p class="small muted mt8" style="text-align:right;">${formatMoney(gainsTotal)} / ${formatMoney(cibleCollective)}</p>`;
   const inputCible = document.getElementById("cibleCollective");
   if (inputCible && document.activeElement !== inputCible) inputCible.value = cibleCollective;
 
